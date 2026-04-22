@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase, createAdminSupabase } from '@/lib/db/supabase'
+import { put } from '@vercel/blob'
+import { sql, getWorkspaceId } from '@/lib/db/neon'
 import { chunkText, embedText } from '@/lib/embeddings'
 import pdfParse from 'pdf-parse'
 import * as XLSX from 'xlsx'
@@ -9,10 +10,6 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const supabase = createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
   const form = await req.formData()
   const file = form.get('file') as File | null
   const category = form.get('category') as string
@@ -20,48 +17,52 @@ export async function POST(req: NextRequest) {
   if (!['budget', 'audit', 'accounting', 'contracts'].includes(category))
     return NextResponse.json({ error: 'invalid category' }, { status: 400 })
 
+  const workspaceId = getWorkspaceId(req)
   const buffer = Buffer.from(await file.arrayBuffer())
-  const admin = createAdminSupabase()
 
-  const storagePath = `${user.id}/${category}/${Date.now()}-${file.name}`
-  const { error: upErr } = await admin.storage.from('documents').upload(storagePath, buffer, {
-    contentType: file.type,
-    upsert: false,
-  })
-  if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
-
-  const { data: doc, error: dErr } = await admin
-    .from('documents')
-    .insert({
-      user_id: user.id,
-      category,
-      filename: file.name,
-      mime_type: file.type,
-      size_bytes: buffer.length,
-      storage_path: storagePath,
+  let storageUrl = ''
+  try {
+    const blob = await put(`${workspaceId}/${category}/${Date.now()}-${file.name}`, buffer, {
+      access: 'public',
+      contentType: file.type,
     })
-    .select()
-    .single()
-  if (dErr || !doc) return NextResponse.json({ error: dErr?.message }, { status: 500 })
+    storageUrl = blob.url
+  } catch (e) {
+    return NextResponse.json({ error: `Blob upload failed: ${String(e)}` }, { status: 500 })
+  }
 
-  const text = await extractText(buffer, file.name, file.type)
+  const rows = await sql`
+    insert into public.documents (workspace_id, category, filename, mime_type, size_bytes, storage_url)
+    values (${workspaceId}::uuid, ${category}, ${file.name}, ${file.type}, ${buffer.length}, ${storageUrl})
+    returning id, filename, size_bytes, created_at
+  `
+  const doc = rows[0]
+
+  let text = ''
+  try {
+    text = await extractText(buffer, file.name, file.type)
+  } catch (e) {
+    return NextResponse.json({ error: `Parse failed: ${String(e)}`, document: doc }, { status: 500 })
+  }
+
   const chunks = chunkText(text)
-
-  const rows: Array<{ document_id: string; chunk_index: number; content: string; embedding: number[] }> = []
+  let chunkCount = 0
   const BATCH = 16
   for (let i = 0; i < chunks.length; i += BATCH) {
     const batch = chunks.slice(i, i + BATCH)
     const embeddings = await Promise.all(batch.map((c) => embedText(c)))
-    batch.forEach((content, j) => {
-      rows.push({ document_id: doc.id, chunk_index: i + j, content, embedding: embeddings[j] })
-    })
-  }
-  if (rows.length) {
-    const { error: cErr } = await admin.from('chunks').insert(rows)
-    if (cErr) return NextResponse.json({ error: cErr.message, document_id: doc.id }, { status: 500 })
+    for (let j = 0; j < batch.length; j++) {
+      const idx = i + j
+      const embLit = `[${embeddings[j].join(',')}]`
+      await sql`
+        insert into public.chunks (document_id, chunk_index, content, embedding)
+        values (${doc.id}::uuid, ${idx}, ${batch[j]}, ${embLit}::vector)
+      `
+      chunkCount++
+    }
   }
 
-  return NextResponse.json({ ok: true, document: doc, chunk_count: rows.length })
+  return NextResponse.json({ ok: true, document: doc, chunk_count: chunkCount })
 }
 
 async function extractText(buffer: Buffer, filename: string, mime: string): Promise<string> {
@@ -74,8 +75,7 @@ async function extractText(buffer: Buffer, filename: string, mime: string): Prom
     const wb = XLSX.read(buffer, { type: 'buffer' })
     const parts: string[] = []
     for (const name of wb.SheetNames) {
-      const sheet = wb.Sheets[name]
-      parts.push(`## Sheet: ${name}\n` + XLSX.utils.sheet_to_csv(sheet))
+      parts.push(`## Sheet: ${name}\n` + XLSX.utils.sheet_to_csv(wb.Sheets[name]))
     }
     return parts.join('\n\n')
   }
@@ -88,14 +88,22 @@ async function extractText(buffer: Buffer, filename: string, mime: string): Prom
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const workspaceId = getWorkspaceId(req)
   const category = req.nextUrl.searchParams.get('category')
-  const admin = createAdminSupabase()
-  let q = admin.from('documents').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
-  if (category) q = q.eq('category', category)
-  const { data, error } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ documents: data })
+
+  const documents = category
+    ? await sql`
+        select id, category, filename, size_bytes, storage_url, created_at
+        from public.documents
+        where workspace_id = ${workspaceId}::uuid and category = ${category}
+        order by created_at desc
+      `
+    : await sql`
+        select id, category, filename, size_bytes, storage_url, created_at
+        from public.documents
+        where workspace_id = ${workspaceId}::uuid
+        order by created_at desc
+      `
+
+  return NextResponse.json({ documents })
 }

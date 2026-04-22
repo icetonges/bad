@@ -2,12 +2,12 @@ export type Category = 'budget' | 'audit' | 'accounting' | 'contracts'
 
 export interface Document {
   id: string
-  user_id: string
+  workspace_id: string
   category: Category
   filename: string
   mime_type: string
   size_bytes: number
-  storage_path: string
+  storage_url: string
   created_at: string
   metadata: Record<string, unknown>
 }

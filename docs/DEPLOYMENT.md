@@ -1,15 +1,19 @@
 # Deployment
 
-Step-by-step from a fresh clone to a production URL.
+Step-by-step from fresh clone to production on Vercel with Neon + Gemini/Groq + Blob.
 
-## Prerequisites
+## You already have most of this
 
-- GitHub account
-- Vercel account (hobby tier is fine to start)
-- Supabase account (free tier OK for small workloads)
-- Anthropic API key ([console.anthropic.com](https://console.anthropic.com))
-- Voyage AI API key ([dash.voyageai.com](https://dash.voyageai.com)) — or OpenAI
-- Resend API key ([resend.com](https://resend.com)) — or Gmail app password
+Since aimlgov.vercel.app is working, you have:
+- Vercel account with a project linked to a GitHub repo
+- Neon project with `DATABASE_URL`, `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` set
+- Google AI Studio API key (`GOOGLE_API_KEY`)
+- Groq API key (`GROQ_API_KEY`)
+
+What's new for this app:
+- A separate Vercel project for fedAnalyst (or overwrite aimlgov)
+- Run the SQL migration against your existing Neon database (safe — tables are prefixed and won't collide unless aimlgov already has `documents`, `chunks`, etc.)
+- Create a Vercel Blob store (free tier: 500MB)
 
 ## 1. Initialize the repo
 
@@ -21,106 +25,137 @@ git commit -m "Initial scaffold"
 gh repo create fedanalyst --private --source=. --remote=origin --push
 ```
 
-If you don't have the GitHub CLI, create the repo manually at github.com and push:
-
+Or manually:
 ```bash
 git remote add origin git@github.com:<you>/fedanalyst.git
 git branch -M main
 git push -u origin main
 ```
 
-## 2. Set up Supabase
+## 2. Provision Vercel Blob
 
-1. Create a new project at [supabase.com](https://supabase.com). Pick a region close to your users. Save the database password — you will need it for CLI access later.
-2. Wait for the project to provision (~2 minutes)
-3. Open the SQL editor and paste the contents of `supabase/migrations/20260422000000_init.sql`
-4. Run it. You should see tables `documents`, `chunks`, `chat_sessions`, `chat_messages`, `reports` and a `documents` storage bucket
-5. Go to Project Settings → API and copy:
-   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon` public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (keep this secret)
+1. Go to Vercel dashboard → Storage → Create → Blob
+2. Name it (e.g., `fedanalyst-documents`)
+3. Copy `BLOB_READ_WRITE_TOKEN` (starts with `vercel_blob_rw_`)
 
-### Configure Auth
+Free tier: 500 MB storage + 5 GB bandwidth/month. More than enough for an MVP.
 
-- Authentication → Providers → Email: enable email/password
-- Optionally enable Google OAuth: add the OAuth client ID and secret from Google Cloud Console
+## 3. Apply the schema to Neon
 
-### pgvector index
-
-After you have ingested ~1,000 chunks, re-analyze the ivfflat index:
+**Check first if your existing Neon database already has conflicting tables:**
 
 ```sql
-analyze public.chunks;
+-- Run this in Neon SQL editor
+select table_name from information_schema.tables
+where table_schema = 'public'
+  and table_name in ('documents','chunks','chat_sessions','chat_messages','reports','workspaces');
 ```
 
-For larger corpora (~100k+ chunks), switch to HNSW:
+If anything conflicts with your aimlgov app, either:
+- **Easier:** create a separate Neon database on the same project (Neon → Databases → New)
+- **More control:** move fedAnalyst's tables to their own schema by wrapping the migration in `create schema fedanalyst; set search_path to fedanalyst;`
 
+Assuming no conflicts:
+
+```bash
+# From local
+cp .env.example .env.local
+# Fill in DATABASE_URL (pooled URL from Neon)
+npm install
+npm run db:migrate
+```
+
+You should see:
+```
+Applying 1 migration(s) to <your-neon-host>
+  → 001_init.sql
+✓ Migrations complete
+```
+
+Verify in Neon SQL editor:
 ```sql
-drop index chunks_embedding_idx;
-create index chunks_embedding_idx on public.chunks
-  using hnsw (embedding vector_cosine_ops) with (m = 16, ef_construction = 64);
+select count(*) from public.workspaces;   -- should be 1
+\dx                                        -- should show vector and uuid-ossp extensions
 ```
 
-## 3. Deploy to Vercel
+## 4. Local test
+
+```bash
+npm run dev
+```
+
+Open http://localhost:3000 → go to `/dashboard/budget` → upload a small PDF.
+
+Expected flow:
+1. File uploads to Vercel Blob (check your Blob dashboard — you should see it appear)
+2. Text is extracted, chunked, embedded via Gemini, inserted into Neon
+3. Chunk count appears next to the filename
+
+Then go to `/dashboard/chat?category=budget` and ask a question. You should see:
+- A `provider` event naming the model (Gemini 2.5 Flash Lite if your Google key is good)
+- A `tool_call` for `retrieve_chunks`
+- A `tool_result` with retrieved passages
+- Streamed answer text
+
+## 5. Deploy to Vercel
 
 ### Option A — CLI
 
 ```bash
 npm install -g vercel
-vercel link     # link to a new Vercel project
-vercel env add  # interactively add each env var for Production, Preview, Development
+vercel link
+```
+
+Pick "link to existing project" if you want to replace aimlgov, or create a new one.
+
+Set environment variables — copy from your existing aimlgov project where they apply:
+
+```bash
+# Copy these from aimlgov
+vercel env add DATABASE_URL
+vercel env add PGHOST
+vercel env add PGUSER
+vercel env add PGPASSWORD
+vercel env add PGDATABASE
+vercel env add GOOGLE_API_KEY
+vercel env add GROQ_API_KEY
+
+# New for fedAnalyst
+vercel env add BLOB_READ_WRITE_TOKEN
+
+# Optional
+vercel env add RESEND_API_KEY
+vercel env add CONTACT_TO_EMAIL
+vercel env add NEXT_PUBLIC_SITE_URL   # set to your Vercel URL after first deploy
+```
+
+Then deploy:
+
+```bash
 vercel deploy --prod
 ```
 
-### Option B — Dashboard
+### Option B — Vercel dashboard
 
-1. Go to vercel.com → New Project → Import from GitHub
-2. Select the repo. Framework preset will auto-detect Next.js
-3. Before the first deploy, go to Settings → Environment Variables and add everything from `.env.example` (Production + Preview scopes)
-4. Deploy
+1. New Project → Import from GitHub → pick `fedanalyst`
+2. In Settings → Environment Variables, add each variable above (Production + Preview scopes)
+3. Click Deploy
 
-### Environment variables required
+## 6. Smoke test production
 
-| Variable | Value |
-|---|---|
-| `ANTHROPIC_API_KEY` | From console.anthropic.com |
-| `ANTHROPIC_MODEL` | `claude-opus-4-7` (recommended) or `claude-sonnet-4-6` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role (server-only) |
-| `VOYAGE_API_KEY` | Voyage AI key (or use `OPENAI_API_KEY` instead) |
-| `EMBEDDING_MODEL` | `voyage-3-large` (or `text-embedding-3-large` for OpenAI) |
-| `RESEND_API_KEY` | Resend API key |
-| `CONTACT_TO_EMAIL` | Where contact form submissions go |
-| `CONTACT_FROM_EMAIL` | Sender address (must be a verified Resend domain) |
-| `MCP_SERVERS` | Optional. Comma-separated MCP server commands |
-| `NEXT_PUBLIC_SITE_URL` | `https://yourapp.vercel.app` after first deploy |
+Once deployed, visit your Vercel URL. Upload a document, run a chat query. Check Vercel logs (Observability → Logs) for any errors.
 
-## 4. Configure Resend (if using)
+Common gotchas:
+- **"GOOGLE_API_KEY not set"** — check the env var scope includes Production
+- **"function exceeded maximum duration"** — embedding a large PDF can take >60s on cold start. Hobby plan limits to 60s. Either upgrade to Pro (300s) or reduce the chunk batch size in `app/api/upload/route.ts` and increase upload-time tolerance
+- **"relation does not exist"** — the migration wasn't applied to the production database. Re-run `npm run db:migrate` with the production `DATABASE_URL` in `.env.local`
+- **Blob upload 403** — wrong `BLOB_READ_WRITE_TOKEN` or Blob store not provisioned in the same Vercel project
 
-1. Sign up at [resend.com](https://resend.com)
-2. Add and verify a domain (or use Resend's testing address during dev)
-3. Create an API key
-4. Set `CONTACT_FROM_EMAIL` to an address on your verified domain
+## 7. Custom domain (optional)
 
-### Gmail alternative
+Vercel dashboard → Settings → Domains → Add. Configure DNS as Vercel instructs. Update `NEXT_PUBLIC_SITE_URL` to match.
 
-If you prefer Gmail:
-
-1. Enable 2FA on the Gmail account
-2. Create an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-3. Set `GMAIL_USER` and `GMAIL_APP_PASSWORD` in Vercel env
-4. `npm install nodemailer` (not in default `package.json` — add if using Gmail path)
-
-## 5. Test the deploy
-
-1. Visit your Vercel URL
-2. Sign up at `/login`. Check your email for the confirmation link. Click it
-3. Go to `/dashboard/budget`, upload a small PDF
-4. Wait for the chunk count to appear (should take 5-30 seconds depending on file size)
-5. Click "Generate insider budget analysis" in the quick actions sidebar — the agent should retrieve chunks and produce output
-
-## 6. Daily input automation (optional)
+## 8. Daily input automation (optional)
 
 Add to `vercel.json`:
 
@@ -133,44 +168,36 @@ Add to `vercel.json`:
 ```
 
 Create `app/api/cron/daily-ingest/route.ts` that:
-
-1. Verifies the `Authorization: Bearer $CRON_SECRET` header (Vercel provides this)
-2. Pulls from your external source (RSS feed, S3 bucket, SharePoint, agency API)
+1. Verifies `Authorization: Bearer <CRON_SECRET>` header
+2. Pulls new documents from your source (RSS, S3, SharePoint, agency API)
 3. Runs the same chunk/embed pipeline as `/api/upload`
 
-Vercel Cron runs in UTC. `0 6 * * *` = 06:00 UTC = 02:00 EDT / 01:00 EST.
+Vercel Cron Hobby tier: 2 scheduled jobs max. Pro: unlimited.
 
-## 7. Custom domain
+## 9. Observability
 
-In Vercel → Settings → Domains, add your domain (e.g. `fedanalyst.yourdomain.gov`). Configure DNS as Vercel instructs. Update `NEXT_PUBLIC_SITE_URL` env var to match.
+Free built-ins:
+- Vercel → Observability → Logs (1-hour retention on Hobby)
+- Neon → Monitoring → connections, query performance
+- Blob dashboard → storage used, bandwidth
 
-## 8. Observability
+Production recommendations:
+- Add `@vercel/analytics`
+- Log agent tool calls to a dedicated `agent_audit` table for compliance trail
+- Consider Sentry for error tracking
 
-Minimal:
-- Vercel → Observability → Logs (free tier: 1 hour retention)
-- Supabase → Logs Explorer for database and auth
+## 10. Scaling notes
 
-Production:
-- Add `@vercel/analytics` or Plausible
-- Add Sentry for error tracking
-- Log all agent tool calls to a dedicated `agent_audit` table for compliance trail
+- **Gemini free tier:** 15 req/min, 1M tokens/day. Beyond that, billed at ~$0.075/M input tokens for Flash Lite — still extremely cheap
+- **Groq free tier:** Very generous but rate-limited per minute. The waterfall means if Groq throttles, you're still up on Gemini
+- **Neon free tier:** 0.5 GB storage, auto-suspends after 5 minutes idle (acceptable for an MVP; first query after suspension has ~1s cold start)
+- **pgvector index:** ivfflat with 100 lists works up to ~100k chunks. Beyond that, switch to HNSW:
+  ```sql
+  drop index chunks_embedding_idx;
+  create index chunks_embedding_idx on public.chunks
+    using hnsw (embedding vector_cosine_ops) with (m = 16, ef_construction = 64);
+  ```
 
-## 9. Scaling notes
+## Rollback
 
-- **Edge vs Node runtime:** the chat route uses Node runtime because `pdf-parse` and the Anthropic SDK have Node-specific dependencies. Keep it there.
-- **Chat duration:** `maxDuration = 60` in `vercel.json` for `/api/chat`. Vercel Pro plan allows 300s. Long multi-step agent runs will need Pro.
-- **Chunk batching:** `/api/upload` processes 16 embeddings at a time. Adjust `BATCH` in `app/api/upload/route.ts` if Voyage/OpenAI rate limits bite.
-- **Vector index:** ivfflat works up to ~100k chunks. Beyond that, HNSW (see Supabase section above).
-- **Python functions:** one concurrent invocation per region on Hobby. Pro plan has higher limits.
-
-## Troubleshooting
-
-**"No embedding provider configured"** — set `VOYAGE_API_KEY` or `OPENAI_API_KEY`.
-
-**"unauthorized" on upload** — Supabase session cookie is not being read. Check that you are signed in and that `middleware.ts` is not blocking the request.
-
-**Chunks returning zero results** — verify the ivfflat index was built; run `analyze public.chunks;` in SQL editor.
-
-**Python function cold starts slow** — first call takes ~3s to warm. Use a warmup cron if this matters.
-
-**MCP calls timing out** — stdio transport requires the server process to be alive. For remote MCP servers use the SSE transport instead.
+If something breaks, rollback is one Vercel dashboard click → Deployments → pick a previous successful deploy → Promote to Production. The database schema is additive (no destructive migrations in this scaffold), so rollbacks are safe.

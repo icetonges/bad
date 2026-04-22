@@ -5,122 +5,119 @@
 ```
 Client (ChatInterface)
   → POST /api/chat  (message, sessionId?, category?)
-  → Supabase auth.getUser()  — verify JWT
-  → Insert user message into chat_messages
-  → Load last 40 messages for context
+  → getWorkspaceId() from X-Workspace-Id header (default if absent)
+  → sql: insert user message into chat_messages
+  → sql: load last 40 messages
   → ReadableStream starts
   → runAgent(message, ctx, previousMessages, onEvent)
-      loop up to 8 times:
-        Anthropic messages.create(model, tools, messages, system)
+      for step in 0..8:
+        generateWithTools(system, messages, tools)
+          try Gemini 2.5 Flash Lite
+          on error → try Llama 3.3 70B
+          on error → try Llama 3.1 8B
+          on error → try Gemini 2.0 Flash
+          all failed → throw
+        emit 'provider' event with the model that answered
         if stop_reason !== 'tool_use': break
-        for each tool_use block:
+        for each tool_call:
           executeTool(name, input, ctx)
-            retrieve_chunks → embedText() → match_chunks RPC (pgvector)
-            python_analysis → fetch /api/analyze (Python runtime)
-            generate_report → insert into reports table
+            retrieve_chunks → embedQuery() → pgvector search via sql``
+            python_analysis → fetch /api/analyze
+            generate_report → sql: insert into reports
             mcp_call → stdio transport → MCP server
-          append tool_result to messages
+          emit 'tool_result' event
+          append tool message for next iteration
       return { text, toolCalls }
-  → Insert assistant message
-  → Stream done event
-Client re-renders with streamed text + tool call UI
+  → sql: insert assistant message
+  → stream 'done' event
+Client re-renders with streamed text + tool UI
 ```
 
 ## Data model
 
+All tables are workspace-scoped via `workspace_id uuid` defaulting to `00000000-0000-0000-0000-000000000001`. A default workspace row is inserted by the migration. To add multi-tenancy, write to `workspace_id` based on your auth context.
+
 ### documents
-Upload metadata. One row per file. `storage_path` points to Supabase Storage.
+File metadata. `storage_url` points to Vercel Blob.
 
 ### chunks
-Text chunks + pgvector embeddings. `embedding vector(1024)`. Chunking: 1200 chars with 150 char overlap, paragraph-respecting split in `lib/embeddings.ts`.
+Text + 768-dimension pgvector embeddings. Chunking: 1200 chars with 150 char overlap, paragraph-respecting (see `lib/embeddings.ts`).
 
 ### chat_sessions / chat_messages
 Multi-turn conversations with tool call history in `tool_calls` JSONB.
 
 ### reports
-Generated reports saved via the `generate_report` tool. Includes source document IDs so you can trace citations.
+Generated reports saved via `generate_report` tool. Tracks source document IDs.
+
+### workspaces
+Single default row for now. Add more when adding auth.
+
+## Why Neon
+
+Same project as your aimlgov.vercel.app — reuse the existing DB connection. Neon's serverless driver (`@neondatabase/serverless`) speaks HTTPS to Postgres, which works in Vercel Edge runtime (no TCP). Auto-suspends when idle, scales to zero. pgvector is supported natively.
+
+## Why Gemini + Groq waterfall
+
+Both are free at usable quotas. Gemini 2.5 Flash Lite is the fastest + cheapest. Groq Llama 3.3 70B is the most capable free model with real tool use. Failing over means the app stays up even if one provider rate-limits.
+
+Both use OpenAI-compatible tool-use schemas, so the normalization in `lib/ai/provider.ts` is mechanical — message-shape translation, schema sanitization (Gemini has stricter schema rules — no `additionalProperties`, types uppercase).
+
+## Why Vercel Blob
+
+Native Vercel integration, no cross-cloud IAM setup. Free tier (500 MB) covers the MVP. Alternatives: S3 (more ops), Supabase Storage (adds another service), Cloudflare R2 (egress-free but needs worker).
 
 ## Vector search
 
-`match_chunks(query_embedding, threshold, count, filter_document_ids)` is a Postgres function using `<=>` (cosine distance). IVFFLAT index with 100 lists — acceptable up to ~100k chunks; switch to HNSW for larger corpora.
+`retrieve_chunks` does an inline cosine similarity search. The SQL:
 
-## Why Supabase
-
-Four services in one:
-1. Postgres (structured data)
-2. pgvector (embeddings)
-3. Auth (JWT, magic link, OAuth)
-4. Storage (files with RLS)
-
-Alternative stacks you might want:
-- **Self-hosted:** Postgres + pgvector + own JWT + S3 — more control, more ops
-- **Best-of-breed:** Neon/RDS + Pinecone + Clerk/Auth0 + S3 — more surface area
-- **Vercel-native:** Vercel Postgres + Vercel Blob + NextAuth — fewer services but no vector DB yet
-
-For a federal analyst MVP, Supabase is the lowest-friction option that still gives you pgvector.
-
-## AI provider swap
-
-`lib/agent/agent.ts` uses the Anthropic SDK directly. To support multiple providers:
-
-1. Extract a minimal interface: `generateWithTools(model, system, tools, messages) → { content[], stop_reason }`
-2. Implement adapters for Anthropic, OpenAI, Google Gemini, Vertex AI
-3. Switch via `process.env.AI_PROVIDER`
-
-The `TOOL_DEFINITIONS` in `lib/agent/tools/index.ts` are Anthropic-schema; OpenAI function calling requires light translation (same JSON schema, wrapper keys differ).
-
-## Streaming
-
-Server-Sent Events, not WebSockets. Events:
-
-```json
-{"type": "step", "step": 0, "stop_reason": null}
-{"type": "text", "text": "The FY27 request …"}
-{"type": "tool_call", "name": "retrieve_chunks", "input": {"query": "…"}}
-{"type": "tool_result", "name": "retrieve_chunks", "output": {…}}
-{"type": "done", "sessionId": "…"}
+```sql
+select c.id, c.document_id, d.filename, c.content,
+       1 - (c.embedding <=> $1::vector) as similarity
+from chunks c
+join documents d on d.id = c.document_id
+where d.workspace_id = $2::uuid
+  and c.embedding is not null
+  and 1 - (c.embedding <=> $1::vector) > 0.35
+order by c.embedding <=> $1::vector
+limit $3
 ```
 
-The client parses `data: ` lines and reduces events into the message state.
+IVFFLAT index with 100 lists. Good up to ~100k chunks. Switch to HNSW beyond that.
+
+## Tool use normalization
+
+Anthropic, OpenAI, and Gemini each have slightly different tool schemas:
+
+| | Anthropic | OpenAI/Groq | Gemini |
+|---|---|---|---|
+| Tool def | `tools: [{name, description, input_schema}]` | `tools: [{type: 'function', function: {name, description, parameters}}]` | `tools: [{functionDeclarations: [...]}]` |
+| Tool result | `{type: 'tool_result', tool_use_id, content}` | `{role: 'tool', tool_call_id, content}` | `{functionResponse: {name, response}}` |
+| Schema caveat | — | — | No `additionalProperties`, type strings uppercase |
+
+`lib/ai/provider.ts` normalizes to a `UnifiedMessage` / `UnifiedTool` internal format and emits the right shape per provider. When you add a new provider (e.g. Anthropic Claude, OpenRouter), that's the only file to touch.
 
 ## Python runtime
 
-`/api/analyze.py` is a Vercel Python serverless function (Python 3.12 with `@vercel/python@4.3.0`). Requirements in `api/requirements.txt`. Max duration 60s per `vercel.json`.
+`/api/analyze.py` is Vercel Python with `@vercel/python@4.3.0`. Requirements in `api/requirements.txt`.
 
-The function:
-- Captures stdout
-- Exposes `pd`, `np`, `plt`, `inputs` in a safe-ish globals dict
-- Serializes DataFrames and arrays for JSON return
-- Base64-encodes any matplotlib figure generated
-- 60s signal alarm for timeout
+Exposes `pd`, `np`, `plt`, `inputs` in a semi-safe globals dict. Captures stdout, serializes DataFrames, base64-encodes matplotlib figures. 60s signal alarm for timeout.
 
-Security: this is not a sandbox. The user's code runs with the function's permissions. Do not expose this to untrusted users without adding a real sandbox (Pyodide, Firecracker, or a hosted code-exec service).
+Not a sandbox. Don't expose `/api/analyze` to untrusted users as-is.
 
 ## MCP integration
 
-The client in `lib/agent/mcp/client.ts` uses the official TypeScript SDK with stdio transport. It caches connections per server spec.
-
-To add SAM.gov lookups:
-
-1. Write a Python MCP server that exposes `search_contract`, `get_opportunity`, etc.
-2. Deploy it somewhere reachable (Railway, Render, or a local stdio process wrapped in SSH)
-3. Add its invocation command to `MCP_SERVERS` env var
-4. The agent calls it via the `mcp_call` tool
-
-For production-grade remote MCP, use `SseClientTransport` instead of stdio.
+`lib/agent/mcp/client.ts` uses the official TypeScript SDK with stdio transport. Caches connections per server spec. See `docs/MCP_SETUP.md`.
 
 ## Extension points
 
-**Add a skill:** edit `lib/agent/skills/index.ts`, add to the `SKILLS` array. Add a quick action in the relevant `app/dashboard/<category>/page.tsx`.
+**Add a skill:** `lib/agent/skills/index.ts` — add the constant, push into `SKILLS`. Add quick action in the category page.
 
-**Add a tool:** edit `lib/agent/tools/index.ts`, add to `TOOL_DEFINITIONS` and a case in `executeTool`.
+**Add a tool:** `lib/agent/tools/index.ts` — add to `TOOL_DEFINITIONS`, add case in `executeTool`.
 
-**Add a category:** edit the `Category` type in `lib/types.ts`, add a route under `app/dashboard/<name>/page.tsx` using `CategoryPage`, add a nav entry in `components/features/dashboard-nav.tsx`, extend the SQL check constraints in the migration.
+**Add a category:** edit `Category` type in `lib/types.ts`, add `app/dashboard/<name>/page.tsx` using `CategoryPage`, add nav entry, extend SQL check constraints.
 
-**Add an MCP server:** set `MCP_SERVERS` env var. Tools are discovered dynamically via `listMcpTools`.
+**Add an AI provider:** edit `lib/ai/provider.ts` — add to `MODEL_WATERFALL` and implement the `call<Provider>` function. The unified message/tool shape is already defined.
 
-**Add daily ingestion:** Vercel Cron in `vercel.json`:
-```json
-{ "crons": [{ "path": "/api/cron/daily-ingest", "schedule": "0 6 * * *" }] }
-```
-Create the endpoint to pull from external sources and run the same chunk/embed pipeline as `/api/upload`.
+**Add auth:** edit `getWorkspaceId` in `lib/db/neon.ts` to read from session instead of header. All routes already use it — no other changes needed.
+
+**Add daily cron:** `vercel.json` + `app/api/cron/daily-ingest/route.ts`. Run the same chunk/embed pipeline as `/api/upload`.

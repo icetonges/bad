@@ -10,7 +10,7 @@ export default function Landing() {
           <div className="flex items-center gap-4 text-sm">
             <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition">Dashboard</Link>
             <Link href="/dashboard/chat" className="text-muted-foreground hover:text-foreground transition">Ask the agent</Link>
-            <Link href="/login" className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium">Sign in</Link>
+            <Link href="/contact" className="text-muted-foreground hover:text-foreground transition">Contact</Link>
           </div>
         </div>
       </nav>
@@ -48,8 +48,8 @@ export default function Landing() {
         <div className="container py-16">
           <h2 className="text-2xl font-medium tracking-tight mb-8">How the agent works</h2>
           <div className="grid gap-6 md:grid-cols-3">
-            <Feature icon={Database} title="Knowledge base" copy="Your uploaded documents are chunked, embedded, and served back to the agent via vector search so answers are grounded in your source material." />
-            <Feature icon={Bot} title="Skills and tools" copy="Each domain (budget, audit, accounting, contracts) is a skill with its own prompts and output schemas. The agent uses tools — web search, Python, MCP servers — to compose answers." />
+            <Feature icon={Database} title="Knowledge base" copy="Your uploaded documents are chunked, embedded into Neon pgvector, and served back to the agent via semantic search so answers are grounded in your source material." />
+            <Feature icon={Bot} title="Multi-model waterfall" copy="Gemini 2.5 Flash Lite, with automatic failover to Groq Llama 3.3 70B, Llama 3.1 8B, and Gemini 2.0 Flash — so the agent stays responsive even when a provider is rate-limited." />
             <Feature icon={FileCheck} title="Standard reporting" copy="One-click generation of the report formats you already produce: budget briefings, audit summaries, contract cost analyses, dashboards." />
           </div>
         </div>
@@ -58,7 +58,7 @@ export default function Landing() {
       <footer className="border-t border-border">
         <div className="container py-8 text-xs text-muted-foreground flex flex-wrap gap-4 justify-between">
           <p>fedAnalyst — not affiliated with any federal agency. Do not upload classified or CUI material without appropriate authorization.</p>
-          <Link href="#contact" className="hover:text-foreground">Contact</Link>
+          <Link href="/contact" className="hover:text-foreground">Contact</Link>
         </div>
       </footer>
     </div>

@@ -1,44 +1,47 @@
-const VOYAGE_API = 'https://api.voyageai.com/v1/embeddings'
-const OPENAI_API = 'https://api.openai.com/v1/embeddings'
+/**
+ * Gemini text-embedding-004 — 768 dimensions, free tier generous.
+ * https://ai.google.dev/gemini-api/docs/embeddings
+ */
+
+const GEMINI_EMBED_URL = 'https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent'
 
 export async function embedText(text: string): Promise<number[]> {
+  const apiKey = process.env.GOOGLE_API_KEY
+  if (!apiKey) throw new Error('GOOGLE_API_KEY not set (required for embeddings)')
+
   const clean = text.replace(/\s+/g, ' ').trim().slice(0, 30000)
-  if (process.env.VOYAGE_API_KEY) {
-    const res = await fetch(VOYAGE_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        input: [clean],
-        model: process.env.EMBEDDING_MODEL || 'voyage-3-large',
-        input_type: 'document',
-        output_dimension: 1024,
-      }),
-    })
-    const data = await res.json()
-    if (!data.data?.[0]?.embedding) throw new Error('Voyage embed failed: ' + JSON.stringify(data))
-    return data.data[0].embedding
-  }
-  if (process.env.OPENAI_API_KEY) {
-    const res = await fetch(OPENAI_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        input: clean,
-        model: process.env.EMBEDDING_MODEL || 'text-embedding-3-large',
-        dimensions: 1024,
-      }),
-    })
-    const data = await res.json()
-    if (!data.data?.[0]?.embedding) throw new Error('OpenAI embed failed: ' + JSON.stringify(data))
-    return data.data[0].embedding
-  }
-  throw new Error('No embedding provider configured. Set VOYAGE_API_KEY or OPENAI_API_KEY.')
+
+  const res = await fetch(`${GEMINI_EMBED_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'models/text-embedding-004',
+      content: { parts: [{ text: clean }] },
+      taskType: 'RETRIEVAL_DOCUMENT',
+    }),
+  })
+  if (!res.ok) throw new Error(`Gemini embed ${res.status}: ${await res.text()}`)
+  const data = await res.json()
+  if (!data.embedding?.values) throw new Error('Gemini embed: missing values')
+  return data.embedding.values
+}
+
+export async function embedQuery(text: string): Promise<number[]> {
+  const apiKey = process.env.GOOGLE_API_KEY
+  if (!apiKey) throw new Error('GOOGLE_API_KEY not set')
+  const clean = text.replace(/\s+/g, ' ').trim().slice(0, 30000)
+  const res = await fetch(`${GEMINI_EMBED_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'models/text-embedding-004',
+      content: { parts: [{ text: clean }] },
+      taskType: 'RETRIEVAL_QUERY',
+    }),
+  })
+  if (!res.ok) throw new Error(`Gemini embed ${res.status}: ${await res.text()}`)
+  const data = await res.json()
+  return data.embedding.values
 }
 
 export function chunkText(text: string, chunkSize = 1200, overlap = 150): string[] {
