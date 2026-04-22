@@ -36,7 +36,7 @@
     "react-markdown": "^9.0.1",
     "recharts": "^2.13.3",
     "remark-gfm": "^4.0.0",
-    "resend": "^4.0.1",
+    "nodemailer": "^6.9.16",
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
     "xlsx": "^0.18.5",
@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
+    "@types/nodemailer": "^6.4.17",
     "@types/papaparse": "^5.3.15",
     "@types/pdf-parse": "^1.1.4",
     "@types/react": "^18.3.12",

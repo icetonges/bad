@@ -1,15 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/*.py": {
+    "api/analyze.py": {
       "runtime": "@vercel/python@4.3.0",
       "maxDuration": 60
-    },
-    "app/api/chat/route.ts": {
-      "maxDuration": 60
-    },
-    "app/api/reports/route.ts": {
-      "maxDuration": 300
     }
   }
 }
