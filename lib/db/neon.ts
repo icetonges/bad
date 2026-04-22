@@ -1,6 +1,4 @@
-import { neon, neonConfig, Pool } from '@neondatabase/serverless'
-
-neonConfig.fetchConnectionCache = true
+import { neon, Pool } from '@neondatabase/serverless'
 
 const connectionString = process.env.DATABASE_URL
 if (!connectionString) {
