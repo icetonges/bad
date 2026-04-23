@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { ArrowRight, ShieldCheck, ClipboardCheck, AlertTriangle, RefreshCw, FolderOpen, FileCheck } from 'lucide-react'
+import { ArrowRight, ShieldCheck, ClipboardCheck, AlertTriangle, RefreshCw, FolderOpen, FileCheck, FileStack } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 
 export default function AuditPage() {
   return (
@@ -11,6 +12,39 @@ export default function AuditPage() {
           Track GAO and IG findings, OMB Circular A-123 work, FMFIA and FFMIA reporting. The agent separates material weaknesses from significant deficiencies, flags repeat findings, and evaluates CAP milestone progress.
         </p>
       </header>
+
+      <section className="mb-10">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Featured analysis</p>
+        <Link href="/dashboard/audit/inside" className="group block">
+          <Card className="transition hover:border-primary/60">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center">
+                  <FileStack className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-medium tracking-[0.15em] uppercase text-gold">Inside analysis</span>
+                    <span className="text-[10px] text-muted-foreground">· DODIG-2026-032 / FY28 roadmap</span>
+                  </div>
+                  <h3 className="font-medium text-base mb-1.5">FY2025 audit, FY2028 clean-opinion goal, and Advana as the bridge</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+                    A portfolio manager's reference to the 8th consecutive disclaimer: 26 material weaknesses, $1T+ in exposed balances, FY28 agency-wide commitment, and how Advana's data platform, UoT engine, and agentic AI close the gap. Heavy emphasis on data-driven remediation.
+                  </p>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>14 sections</span>
+                    <span>·</span>
+                    <span>10 AI/ML remediation plays</span>
+                    <span>·</span>
+                    <span>USMC playbook</span>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition shrink-0 mt-1" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </section>
 
       <section className="mb-10">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Pulse</p>

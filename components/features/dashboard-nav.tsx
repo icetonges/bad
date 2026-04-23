@@ -36,6 +36,7 @@ const GROUPS: NavGroup[] = [
     label: 'Audit & Assurance',
     items: [
       { href: '/dashboard/audit',         icon: ShieldCheck,     label: 'Findings tracker' },
+      { href: '/dashboard/audit/inside',  icon: FileStack,       label: 'Audit inside' },
       { href: '/dashboard/audit/library', icon: FolderOpen,      label: 'Document library' },
     ],
   },
