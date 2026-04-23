@@ -67,18 +67,25 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
       {items.length > 0 && (
         <ul className="space-y-1.5">
           {items.map((it, i) => (
-            <li key={i} className="flex items-center gap-3 rounded-md border border-border p-2.5 text-sm">
-              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="flex-1 truncate">{it.file.name}</span>
-              <span className="text-xs text-muted-foreground">{formatBytes(it.file.size)}</span>
-              {it.state === 'uploading' && <Loader2 className="h-4 w-4 animate-spin" />}
-              {it.state === 'done' && (
-                <>
-                  <span className="text-xs text-muted-foreground">{it.chunks} chunks</span>
-                  <Check className="h-4 w-4 text-green-600" />
-                </>
+            <li key={i} className="rounded-md border border-border p-2.5 text-sm">
+              <div className="flex items-center gap-3">
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="flex-1 truncate">{it.file.name}</span>
+                <span className="text-xs text-muted-foreground">{formatBytes(it.file.size)}</span>
+                {it.state === 'uploading' && <Loader2 className="h-4 w-4 animate-spin" />}
+                {it.state === 'done' && (
+                  <>
+                    <span className="text-xs text-muted-foreground">{it.chunks} chunks</span>
+                    <Check className="h-4 w-4 text-green-600" />
+                  </>
+                )}
+                {it.state === 'error' && <X className="h-4 w-4 text-destructive" />}
+              </div>
+              {it.state === 'error' && it.message && (
+                <div className="mt-2 pl-7 text-xs text-destructive break-words">
+                  {it.message}
+                </div>
               )}
-              {it.state === 'error' && <X className="h-4 w-4 text-destructive" />}
             </li>
           ))}
         </ul>

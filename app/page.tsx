@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, FileSpreadsheet, Gavel, Calculator, FileCheck, Bot, Database } from 'lucide-react'
+import { ArrowRight, BarChart3, ShieldCheck, Coins, FileSignature, Bot, Database, FileCheck } from 'lucide-react'
 import { ThemeToggle } from '@/components/features/theme-toggle'
 
 export default function Landing() {
@@ -12,9 +12,9 @@ export default function Landing() {
             <span>FedFMMatter</span>
           </Link>
           <div className="flex items-center gap-4 text-sm">
-            <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition">Dashboard</Link>
-            <Link href="/dashboard/chat" className="text-muted-foreground hover:text-foreground transition">Agent</Link>
-            <Link href="/contact" className="text-muted-foreground hover:text-foreground transition">Contact</Link>
+            <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition">Workspace</Link>
+            <Link href="/dashboard/chat" className="text-muted-foreground hover:text-foreground transition">Ask</Link>
+            <Link href="/about" className="text-muted-foreground hover:text-foreground transition">About</Link>
             <ThemeToggle />
           </div>
         </div>
@@ -31,10 +31,10 @@ export default function Landing() {
           </p>
           <div className="flex flex-wrap gap-3">
             <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 transition">
-              Open dashboard <ArrowRight className="h-4 w-4" />
+              Open workspace <ArrowRight className="h-4 w-4" />
             </Link>
             <Link href="/dashboard/chat" className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent transition">
-              Talk to the agent
+              Ask the agent
             </Link>
           </div>
         </div>
@@ -46,19 +46,40 @@ export default function Landing() {
             <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-gold mb-2">Featured reference</p>
             <h3 className="text-lg font-medium tracking-tight mb-1">FY 2027 Department of War Budget — inside analysis</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Reference page covering topline architecture, the $350B mandatory tranche, procurement deep-dive across all 19 appropriation titles, MAC munitions, AI/autonomy portfolio, Advana → WDP restructuring, winners and losers, and execution risks.
+              Topline architecture, the $350B mandatory tranche, procurement across 19 appropriation titles, MAC munitions, AI/autonomy portfolio, Advana → WDP restructuring, winners and losers, and execution risks.
             </p>
           </div>
-          <Link href="/dashboard/pb27" className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent hover:border-primary/60 transition">
+          <Link href="/dashboard/budget/pb27" className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent hover:border-primary/60 transition">
             Open analysis <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 
+        <h2 className="text-2xl font-medium tracking-tight mb-6">Four practice areas</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <CategoryCard href="/dashboard/budget" icon={FileSpreadsheet} title="Budget" copy="PB justifications, appropriation analysis, mandatory vs discretionary, MAC munitions." />
-          <CategoryCard href="/dashboard/audit" icon={Gavel} title="Audit" copy="GAO findings, IG reports, unmodified opinion readiness, material weakness tracking." />
-          <CategoryCard href="/dashboard/accounting" icon={Calculator} title="Accounting & data" copy="Financial statements, obligations, outlays, unliquidated obligations, cost reports." />
-          <CategoryCard href="/dashboard/contracts" icon={FileCheck} title="Contracts" copy="FAR/DFARS compliance, contract reviews, cost analysis, performance monitoring." />
+          <AreaCard
+            href="/dashboard/budget"
+            icon={BarChart3}
+            title="Budget & Programs"
+            copy="Program analysis, PB justifications, appropriation deep-dives, mandatory vs discretionary architecture."
+          />
+          <AreaCard
+            href="/dashboard/audit"
+            icon={ShieldCheck}
+            title="Audit & Assurance"
+            copy="Findings tracker, repeat-finding detection, CAP milestone status, unmodified-opinion readiness."
+          />
+          <AreaCard
+            href="/dashboard/accounting"
+            icon={Coins}
+            title="Accounting & Execution"
+            copy="Obligation rates, outlay tracking, ULO analysis, TAFS reconciliation, cancellation-risk surveillance."
+          />
+          <AreaCard
+            href="/dashboard/contracts"
+            icon={FileSignature}
+            title="Contracts & Acquisition"
+            copy="Contract cost review, FAR/DFARS compliance, EVM variance, competition analysis, performance scoring."
+          />
         </div>
       </section>
 
@@ -76,14 +97,17 @@ export default function Landing() {
       <footer className="border-t border-border">
         <div className="container py-8 text-xs text-muted-foreground flex flex-wrap gap-4 justify-between">
           <p>FedFMMatter — not affiliated with any federal agency. Do not upload classified or CUI material without appropriate authorization.</p>
-          <Link href="/contact" className="hover:text-foreground">Contact</Link>
+          <div className="flex gap-4">
+            <Link href="/about" className="hover:text-foreground">About</Link>
+            <Link href="/contact" className="hover:text-foreground">Contact</Link>
+          </div>
         </div>
       </footer>
     </div>
   )
 }
 
-function CategoryCard({ href, icon: Icon, title, copy }: { href: string; icon: any; title: string; copy: string }) {
+function AreaCard({ href, icon: Icon, title, copy }: { href: string; icon: any; title: string; copy: string }) {
   return (
     <Link href={href} className="group rounded-lg border border-border bg-card p-5 transition hover:border-primary/60 hover:-translate-y-0.5">
       <Icon className="h-5 w-5 mb-3 text-muted-foreground group-hover:text-primary transition" />

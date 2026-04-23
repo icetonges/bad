@@ -14,21 +14,22 @@ interface Message {
   toolCalls?: Array<{ name: string; input?: unknown; output?: unknown }>
 }
 
-export function ChatInterface({ category }: { category?: string }) {
+export function ChatInterface({ category, initialPrompt }: { category?: string; initialPrompt?: string }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const autoSentRef = useRef(false)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  async function send() {
-    if (!input.trim() || busy) return
-    const userMsg = input.trim()
-    setInput('')
+  async function send(overrideMessage?: string) {
+    const userMsg = (overrideMessage ?? input).trim()
+    if (!userMsg || busy) return
+    if (!overrideMessage) setInput('')
     setBusy(true)
     const next: Message[] = [...messages, { role: 'user', content: userMsg }, { role: 'assistant', content: '', toolCalls: [] }]
     setMessages(next)
@@ -39,6 +40,10 @@ export function ChatInterface({ category }: { category?: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMsg, sessionId, category }),
       })
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '')
+        throw new Error(`API ${res.status}: ${errBody.slice(0, 300)}`)
+      }
       if (!res.body) throw new Error('No response body')
 
       const reader = res.body.getReader()
@@ -67,6 +72,8 @@ export function ChatInterface({ category }: { category?: string }) {
               if (last.toolCalls?.length) last.toolCalls[last.toolCalls.length - 1].output = evt.output
             } else if (evt.type === 'done') {
               if (evt.sessionId && !sessionId) setSessionId(evt.sessionId)
+            } else if (evt.type === 'error') {
+              last.content += `\n\n**Error:** ${evt.message || 'Unknown error from server'}`
             }
             return copy
           })
@@ -78,6 +85,14 @@ export function ChatInterface({ category }: { category?: string }) {
       setBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (initialPrompt && !autoSentRef.current && !busy && messages.length === 0) {
+      autoSentRef.current = true
+      send(initialPrompt)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrompt])
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
@@ -140,7 +155,7 @@ export function ChatInterface({ category }: { category?: string }) {
             }}
             disabled={busy}
           />
-          <Button onClick={send} disabled={busy || !input.trim()} size="icon">
+          <Button onClick={() => send()} disabled={busy || !input.trim()} size="icon">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
