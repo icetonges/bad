@@ -42,7 +42,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'python_analysis',
     description:
-      "Execute Python with pandas, numpy, matplotlib available. Use for data transformations, obligation rate calculations, trend regressions, chart generation from tabular data.",
+      "Execute Python with pandas and numpy available. Use for data transformations, obligation rate calculations, trend regressions, statistical work. For charts, use generate_chart instead (renders interactively client-side via Recharts).",
     input_schema: {
       type: 'object',
       properties: {

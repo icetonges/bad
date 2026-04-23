@@ -25,7 +25,7 @@ This is a scaffold, not a finished product. The core flows work end-to-end once 
 | Database | Neon Postgres + pgvector | Serverless, generous free tier, same project as aimlgov.vercel.app |
 | Embeddings | Gemini `text-embedding-004` (768-dim) | Free tier |
 | Storage | Vercel Blob | Native integration |
-| Python | Vercel Python serverless | pandas/numpy/matplotlib for heavy analysis |
+| Python | Vercel Python serverless | pandas/numpy for data analysis; charts render client-side via Recharts |
 | MCP | `@modelcontextprotocol/sdk` | Tool server protocol support |
 | Email | Resend | Contact form |
 | Auth | None (public app, workspace-scoped) | Add later when ready — see `lib/db/neon.ts` |
@@ -114,7 +114,7 @@ lib/
   utils.ts
 
 api/
-  analyze.py                     Vercel Python — pandas/numpy/matplotlib
+  analyze.py                     Vercel Python — pandas + numpy
 
 db/
   migrations/001_init.sql        Neon schema: documents, chunks, sessions,

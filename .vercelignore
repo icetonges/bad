@@ -1,0 +1,12 @@
+# Files from this repo that Vercel should not upload.
+# Note: this does NOT strip content from Python packages installed during build
+# (pandas tests, etc.) — those are inside wheels downloaded at build time.
+
+.env.local
+.env*.local
+*.log
+__pycache__/
+*.pyc
+*.pyo
+docs/
+scripts/

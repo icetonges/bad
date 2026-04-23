@@ -100,7 +100,9 @@ Anthropic, OpenAI, and Gemini each have slightly different tool schemas:
 
 `/api/analyze.py` is Vercel Python with `@vercel/python@4.3.0`. Requirements in `api/requirements.txt`.
 
-Exposes `pd`, `np`, `plt`, `inputs` in a semi-safe globals dict. Captures stdout, serializes DataFrames, base64-encodes matplotlib figures. 60s signal alarm for timeout.
+Exposes `pd`, `np`, `inputs` in a semi-safe globals dict. Captures stdout, serializes DataFrames. 60s signal alarm for timeout.
+
+Note: matplotlib is intentionally excluded — adding it pushes the Python function past Vercel's 250 MB limit. Charts render client-side via the `generate_chart` tool (Recharts).
 
 Not a sandbox. Don't expose `/api/analyze` to untrusted users as-is.
 
