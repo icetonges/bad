@@ -112,7 +112,7 @@ For servers that should be deployed separately (e.g. on Railway or Render), use 
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 
 const transport = new SSEClientTransport(new URL('https://mcp-sam-gov.yourapp.com/sse'))
-const client = new Client({ name: 'fedanalyst', version: '0.1.0' }, { capabilities: {} })
+const client = new Client({ name: 'fedfmmatter', version: '0.1.0' }, { capabilities: {} })
 await client.connect(transport)
 ```
 

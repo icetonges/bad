@@ -1,4 +1,4 @@
-# fedAnalyst
+# FedFMMatter
 
 AI-powered analyst for U.S. federal government budget, audit, accounting, and contract work. Built on Next.js + Gemini/Groq + Neon Postgres + Vercel.
 

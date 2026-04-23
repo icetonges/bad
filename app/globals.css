@@ -2,56 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Color system — dark-first.
+  Gold accent matches federal / CDFM conventions.
+  Values in HSL so Tailwind's opacity modifiers work.
+*/
+
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --primary: 222 47% 20%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 94%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 222 47% 20%;
+  /* Dark mode (default) */
+  :root,
+  .dark {
+    --background: 222 20% 7%;          /* near-black, slight blue tint */
+    --foreground: 40 20% 94%;          /* warm off-white */
+    --card: 222 18% 9%;
+    --card-foreground: 40 20% 94%;
+    --popover: 222 18% 9%;
+    --popover-foreground: 40 20% 94%;
+    --primary: 43 55% 52%;             /* #D4AF37 gold */
+    --primary-foreground: 222 20% 7%;
+    --secondary: 222 14% 14%;
+    --secondary-foreground: 40 20% 94%;
+    --muted: 222 14% 14%;
+    --muted-foreground: 40 10% 64%;
+    --accent: 222 14% 16%;
+    --accent-foreground: 40 20% 94%;
+    --destructive: 0 63% 52%;
+    --destructive-foreground: 40 20% 94%;
+    --border: 222 14% 18%;
+    --input: 222 14% 18%;
+    --ring: 43 55% 52%;                /* gold focus ring */
     --radius: 0.5rem;
   }
 
-  .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 15%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 15%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 40%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 213 27% 84%;
+  /* Light mode */
+  .light {
+    --background: 40 20% 98%;          /* warm white */
+    --foreground: 222 30% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 30% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 30% 10%;
+    --primary: 43 60% 42%;             /* darker gold for contrast on white */
+    --primary-foreground: 40 20% 98%;
+    --secondary: 40 15% 94%;
+    --secondary-foreground: 222 30% 10%;
+    --muted: 40 15% 94%;
+    --muted-foreground: 222 10% 40%;
+    --accent: 40 15% 92%;
+    --accent-foreground: 222 30% 10%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 40 20% 98%;
+    --border: 40 15% 88%;
+    --input: 40 15% 88%;
+    --ring: 43 60% 42%;
   }
 }
 
 @layer base {
   * { @apply border-border; }
-  body { @apply bg-background text-foreground; font-feature-settings: "rlig" 1, "calt" 1; }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Gold-accented selection */
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--foreground));
+  }
 }
 
+/* Gold accent utility for brand marks and emphasis */
+.text-gold { color: hsl(43 55% 58%); }
+.dark .text-gold { color: hsl(43 65% 60%); }
+.bg-gold { background-color: hsl(43 55% 52%); }
+.border-gold { border-color: hsl(43 55% 52%); }
+
+/* Chat / report prose */
 .prose-fed pre { @apply bg-muted rounded-md p-3 text-xs overflow-auto; }
 .prose-fed code { @apply bg-muted px-1 py-0.5 rounded text-sm; }
 .prose-fed table { @apply w-full border-collapse text-sm my-4; }
 .prose-fed th, .prose-fed td { @apply border border-border px-3 py-2 text-left; }
 .prose-fed th { @apply bg-muted font-medium; }
+.prose-fed h1, .prose-fed h2, .prose-fed h3 { @apply font-medium tracking-tight; }
+.prose-fed h1 { @apply text-xl mb-3 mt-6; }
+.prose-fed h2 { @apply text-lg mb-2 mt-5; }
+.prose-fed h3 { @apply text-base mb-2 mt-4; }
+.prose-fed p { @apply mb-3 leading-relaxed; }
+.prose-fed ul, .prose-fed ol { @apply mb-3 pl-6; }
+.prose-fed li { @apply mb-1; }
+.prose-fed strong { @apply font-medium text-foreground; }

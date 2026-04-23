@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 
   const html = `
     <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px">
-      <h2 style="margin:0 0 16px">fedAnalyst contact form</h2>
+      <h2 style="margin:0 0 16px">FedFMMatter contact form</h2>
       <table style="border-collapse:collapse;font-size:14px">
         <tr><td style="padding:4px 16px 4px 0;color:#666">From</td><td style="padding:4px 0"><b>${escape(name)}</b> &lt;${escape(email)}&gt;</td></tr>
         <tr><td style="padding:4px 16px 4px 0;color:#666">Organization</td><td style="padding:4px 0">${escape(organization ?? '—')}</td></tr>
@@ -52,10 +52,10 @@ export async function POST(req: NextRequest) {
     })
 
     await transporter.sendMail({
-      from: `"fedAnalyst" <${gmailUser}>`,
+      from: `"FedFMMatter" <${gmailUser}>`,
       to,
       replyTo: email,
-      subject: `[fedAnalyst] ${subject}`,
+      subject: `[FedFMMatter] ${subject}`,
       html,
       text: `From: ${name} <${email}>\nOrganization: ${organization ?? '—'}\nSubject: ${subject}\n\n${message}`,
     })

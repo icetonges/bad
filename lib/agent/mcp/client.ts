@@ -20,7 +20,7 @@ export async function connectMcpServer(serverSpec: string): Promise<Client> {
   const [command, ...args] = serverSpec.split(' ')
   const transport = new StdioClientTransport({ command, args })
   const client = new Client(
-    { name: 'fedanalyst', version: '0.1.0' },
+    { name: 'fedfmmatter', version: '0.1.0' },
     { capabilities: {} }
   )
   await client.connect(transport)

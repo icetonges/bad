@@ -11,23 +11,23 @@ Since aimlgov.vercel.app is working, you have:
 - Groq API key (`GROQ_API_KEY`)
 
 What's new for this app:
-- A separate Vercel project for fedAnalyst (or overwrite aimlgov)
+- A separate Vercel project for FedFMMatter (or overwrite aimlgov)
 - Run the SQL migration against your existing Neon database (safe — tables are prefixed and won't collide unless aimlgov already has `documents`, `chunks`, etc.)
 - Create a Vercel Blob store (free tier: 500MB)
 
 ## 1. Initialize the repo
 
 ```bash
-cd fedanalyst
+cd fedfmmatter
 git init
 git add .
 git commit -m "Initial scaffold"
-gh repo create fedanalyst --private --source=. --remote=origin --push
+gh repo create fedfmmatter --private --source=. --remote=origin --push
 ```
 
 Or manually:
 ```bash
-git remote add origin git@github.com:<you>/fedanalyst.git
+git remote add origin git@github.com:<you>/fedfmmatter.git
 git branch -M main
 git push -u origin main
 ```
@@ -35,7 +35,7 @@ git push -u origin main
 ## 2. Provision Vercel Blob
 
 1. Go to Vercel dashboard → Storage → Create → Blob
-2. Name it (e.g., `fedanalyst-documents`)
+2. Name it (e.g., `fedfmmatter-documents`)
 3. Copy `BLOB_READ_WRITE_TOKEN` (starts with `vercel_blob_rw_`)
 
 Free tier: 500 MB storage + 5 GB bandwidth/month. More than enough for an MVP.
@@ -53,7 +53,7 @@ where table_schema = 'public'
 
 If anything conflicts with your aimlgov app, either:
 - **Easier:** create a separate Neon database on the same project (Neon → Databases → New)
-- **More control:** move fedAnalyst's tables to their own schema by wrapping the migration in `create schema fedanalyst; set search_path to fedanalyst;`
+- **More control:** move FedFMMatter's tables to their own schema by wrapping the migration in `create schema fedfmmatter; set search_path to fedfmmatter;`
 
 Assuming no conflicts:
 
@@ -120,7 +120,7 @@ vercel env add PGDATABASE
 vercel env add GOOGLE_API_KEY
 vercel env add GROQ_API_KEY
 
-# New for fedAnalyst
+# New for FedFMMatter
 vercel env add BLOB_READ_WRITE_TOKEN
 
 # Optional
@@ -137,7 +137,7 @@ vercel deploy --prod
 
 ### Option B — Vercel dashboard
 
-1. New Project → Import from GitHub → pick `fedanalyst`
+1. New Project → Import from GitHub → pick `fedfmmatter`
 2. In Settings → Environment Variables, add each variable above (Production + Preview scopes)
 3. Click Deploy
 
