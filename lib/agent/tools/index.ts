@@ -40,19 +40,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
-    name: 'python_analysis',
-    description:
-      "Execute Python with pandas and numpy available. Use for data transformations, obligation rate calculations, trend regressions, statistical work. For charts, use generate_chart instead (renders interactively client-side via Recharts).",
-    input_schema: {
-      type: 'object',
-      properties: {
-        code: { type: 'string' },
-        inputs: { type: 'object' },
-      },
-      required: ['code'],
-    },
-  },
-  {
     name: 'generate_chart',
     description: 'Produce a Recharts-ready chart spec that the frontend renders. Use when visualization strengthens analysis.',
     input_schema: {
@@ -113,7 +100,6 @@ export async function executeTool(
   switch (name) {
     case 'retrieve_chunks': return retrieveChunks(input, ctx)
     case 'web_search': return webSearch(input)
-    case 'python_analysis': return pythonAnalysis(input)
     case 'generate_chart': return { ok: true, chart: input }
     case 'generate_report': return generateReport(input, ctx)
     case 'mcp_call': return mcpCall(input)
@@ -157,20 +143,6 @@ async function webSearch(input: { query: string }) {
     note: 'Web search stub. Wire to Tavily, Brave, or Google Custom Search in lib/agent/tools/index.ts.',
     query: input.query,
     results: [],
-  }
-}
-
-async function pythonAnalysis(input: { code: string; inputs?: Record<string, unknown> }) {
-  const base = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-  try {
-    const response = await fetch(`${base}/api/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    })
-    return await response.json()
-  } catch (e) {
-    return { error: String(e) }
   }
 }
 

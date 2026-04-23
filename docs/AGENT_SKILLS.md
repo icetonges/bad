@@ -65,7 +65,7 @@ Structure:
 5. Execution feasibility — is there sufficient time to obligate at the destination before expiration?
 
 Reference DoD FMR Volume 3 Chapter 6 for DoD reprogramming rules. Reference the specific appropriation act for committee thresholds.`,
-  tools: ['retrieve_chunks', 'python_analysis'],
+  tools: ['retrieve_chunks'],
 }
 
 export const SKILLS: Skill[] = [

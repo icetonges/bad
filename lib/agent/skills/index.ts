@@ -22,7 +22,7 @@ Rules:
 - Never invent numbers — if a figure is not in the source, say so
 - Lead with the analytical point, then the supporting data
 - When comparing years, use the prior-year enacted level as the anchor, not the prior-year request`,
-  tools: ['retrieve_chunks', 'web_search', 'python_analysis', 'generate_chart'],
+  tools: ['retrieve_chunks', 'web_search', 'generate_chart'],
 }
 
 export const AUDIT_REPORT_SKILL: Skill = {
@@ -69,7 +69,7 @@ When analyzing execution:
 4. Tie to the appropriation's period of availability
 
 Never conflate budget authority with outlays. Never say a program "spent" money when it obligated money.`,
-  tools: ['retrieve_chunks', 'python_analysis', 'generate_chart'],
+  tools: ['retrieve_chunks', 'generate_chart'],
 }
 
 export const CONTRACT_ANALYSIS_SKILL: Skill = {
@@ -112,7 +112,7 @@ export const DASHBOARD_GENERATION_SKILL: Skill = {
 - key_insights (2-4 bullet takeaways)
 
 Use federal color conventions when appropriate: blue for authoritative/primary, orange for mandatory/supplemental, gray for baseline/comparison.`,
-  tools: ['retrieve_chunks', 'python_analysis'],
+  tools: ['retrieve_chunks'],
 }
 
 export const STANDARD_REPORT_SKILL: Skill = {
@@ -130,7 +130,7 @@ RECOMMENDATIONS — Specific, assigned, dated
 APPENDICES — Supporting tables, source citations
 
 Tone: neutral, authoritative, no marketing language. Active voice. Short paragraphs. Sentence case for headings.`,
-  tools: ['retrieve_chunks', 'web_search', 'python_analysis', 'generate_chart'],
+  tools: ['retrieve_chunks', 'web_search', 'generate_chart'],
 }
 
 export const SKILLS: Skill[] = [

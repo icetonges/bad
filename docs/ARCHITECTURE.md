@@ -22,7 +22,7 @@ Client (ChatInterface)
         for each tool_call:
           executeTool(name, input, ctx)
             retrieve_chunks → embedQuery() → pgvector search via sql``
-            python_analysis → fetch /api/analyze
+            generate_chart → returns chart spec to client
             generate_report → sql: insert into reports
             mcp_call → stdio transport → MCP server
           emit 'tool_result' event
@@ -96,15 +96,16 @@ Anthropic, OpenAI, and Gemini each have slightly different tool schemas:
 
 `lib/ai/provider.ts` normalizes to a `UnifiedMessage` / `UnifiedTool` internal format and emits the right shape per provider. When you add a new provider (e.g. Anthropic Claude, OpenRouter), that's the only file to touch.
 
-## Python runtime
+## Why there's no Python runtime
 
-`/api/analyze.py` is Vercel Python with `@vercel/python@4.3.0`. Requirements in `api/requirements.txt`.
+Earlier iterations of this scaffold included a Vercel Python serverless function (`/api/analyze`) with pandas/numpy for data analysis. That was removed because pandas bundled with its test suite — which Vercel's Python builder cannot selectively strip — pushes the function past the hard 250 MB uncompressed limit.
 
-Exposes `pd`, `np`, `inputs` in a semi-safe globals dict. Captures stdout, serializes DataFrames. 60s signal alarm for timeout.
+The tradeoffs of removing Python:
 
-Note: matplotlib is intentionally excluded — adding it pushes the Python function past Vercel's 250 MB limit. Charts render client-side via the `generate_chart` tool (Recharts).
+- **Lost:** heavy statistical operations (regression, time-series decomposition), complex pandas aggregations
+- **Kept:** arithmetic, ratios, percentages, deltas (agent does these inline), semantic search, chart generation via Recharts
 
-Not a sandbox. Don't expose `/api/analyze` to untrusted users as-is.
+For the federal budget/audit/contracts workflows this app targets, the vast majority of computation is basic arithmetic + visualization, which the agent handles without a code execution tool. If heavy Python becomes necessary later, the right path is a **separate Python service** on Modal, Railway, or Fly.io (none of which have Vercel's 250 MB limit) called over HTTP from a new agent tool.
 
 ## MCP integration
 

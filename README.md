@@ -25,7 +25,6 @@ This is a scaffold, not a finished product. The core flows work end-to-end once 
 | Database | Neon Postgres + pgvector | Serverless, generous free tier, same project as aimlgov.vercel.app |
 | Embeddings | Gemini `text-embedding-004` (768-dim) | Free tier |
 | Storage | Vercel Blob | Native integration |
-| Python | Vercel Python serverless | pandas/numpy for data analysis; charts render client-side via Recharts |
 | MCP | `@modelcontextprotocol/sdk` | Tool server protocol support |
 | Email | Resend | Contact form |
 | Auth | None (public app, workspace-scoped) | Add later when ready — see `lib/db/neon.ts` |
@@ -78,7 +77,7 @@ Optional:
 
 - `RESEND_API_KEY` + `CONTACT_TO_EMAIL` — contact form
 - `MCP_SERVERS` — comma-separated MCP server commands
-- `NEXT_PUBLIC_SITE_URL` — for the Python tool to reach `/api/analyze`
+- `NEXT_PUBLIC_SITE_URL` — canonical site URL for contact form and future integrations
 
 See `.env.example` for the full list.
 
@@ -113,9 +112,6 @@ lib/
   types.ts                       Shared types
   utils.ts
 
-api/
-  analyze.py                     Vercel Python — pandas + numpy
-
 db/
   migrations/001_init.sql        Neon schema: documents, chunks, sessions,
                                  messages, reports, match_chunks function
@@ -146,10 +142,11 @@ The agent is a tool-use loop (`lib/agent/agent.ts`) that:
 |---|---|
 | `retrieve_chunks` | Semantic search over uploaded documents via pgvector |
 | `web_search` | Public web lookups (stub — wire to Tavily, Brave, or Google CSE) |
-| `python_analysis` | Execute Python in the Vercel Python function |
-| `generate_chart` | Recharts-ready chart spec |
+| `generate_chart` | Recharts-ready chart spec rendered client-side |
 | `generate_report` | Save a finished report |
 | `mcp_call` | Call a tool on a connected MCP server |
+
+Math and aggregations are done inline by the agent — there is no code execution tool. This was a deliberate tradeoff to keep the deploy under Vercel's 250 MB function size limit (pandas + numpy would exceed it).
 
 ### Skills
 
