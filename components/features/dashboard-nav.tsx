@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileSpreadsheet, Gavel, Calculator, FileCheck, MessageSquare, FileText, Home } from 'lucide-react'
+import { FileSpreadsheet, Gavel, Calculator, FileCheck, MessageSquare, FileText, Home, BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from './theme-toggle'
 
 const NAV = [
   { href: '/dashboard', icon: Home, label: 'Overview' },
+  { href: '/dashboard/pb27', icon: BarChart3, label: 'PB27 Analysis' },
   { href: '/dashboard/budget', icon: FileSpreadsheet, label: 'Budget' },
   { href: '/dashboard/audit', icon: Gavel, label: 'Audit' },
   { href: '/dashboard/accounting', icon: Calculator, label: 'Accounting' },

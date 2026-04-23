@@ -12,21 +12,29 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
+function applyThemeClass(t: Theme) {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  if (t === 'dark') root.classList.add('dark')
+  else root.classList.remove('dark')
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // Start with 'dark' to match the no-flash script default; useEffect syncs from storage.
   const [theme, setThemeState] = useState<Theme>('dark')
 
   useEffect(() => {
     const stored = typeof window !== 'undefined' ? localStorage.getItem('theme') : null
     const initial: Theme = stored === 'light' ? 'light' : 'dark'
     setThemeState(initial)
-    document.documentElement.classList.toggle('dark', initial === 'dark')
+    applyThemeClass(initial)
   }, [])
 
   function setTheme(t: Theme) {
     setThemeState(t)
     if (typeof window !== 'undefined') {
       localStorage.setItem('theme', t)
-      document.documentElement.classList.toggle('dark', t === 'dark')
+      applyThemeClass(t)
     }
   }
 

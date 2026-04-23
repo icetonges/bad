@@ -14,14 +14,13 @@ export const metadata: Metadata = {
   },
 }
 
-// Inline script prevents theme flash on first paint
+// Inline script prevents theme flash on first paint.
+// Dark is the DEFAULT — we add the .dark class unless user has explicitly chosen light.
 const noFlashScript = `
 (function() {
   try {
     var t = localStorage.getItem('theme');
-    var d = t === 'light' ? false : true;
-    if (d) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.add('light');
+    if (t !== 'light') document.documentElement.classList.add('dark');
   } catch (e) {
     document.documentElement.classList.add('dark');
   }

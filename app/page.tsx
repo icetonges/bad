@@ -41,6 +41,19 @@ export default function Landing() {
       </section>
 
       <section className="container pb-20">
+        <div className="mb-10 rounded-lg border border-border bg-card p-6 flex items-start gap-4 flex-wrap">
+          <div className="flex-1 min-w-[240px]">
+            <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-gold mb-2">Featured reference</p>
+            <h3 className="text-lg font-medium tracking-tight mb-1">FY 2027 Department of War Budget — inside analysis</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Reference page covering topline architecture, the $350B mandatory tranche, procurement deep-dive across all 19 appropriation titles, MAC munitions, AI/autonomy portfolio, Advana → WDP restructuring, winners and losers, and execution risks.
+            </p>
+          </div>
+          <Link href="/dashboard/pb27" className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent hover:border-primary/60 transition">
+            Open analysis <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <CategoryCard href="/dashboard/budget" icon={FileSpreadsheet} title="Budget" copy="PB justifications, appropriation analysis, mandatory vs discretionary, MAC munitions." />
           <CategoryCard href="/dashboard/audit" icon={Gavel} title="Audit" copy="GAO findings, IG reports, unmodified opinion readiness, material weakness tracking." />

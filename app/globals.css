@@ -3,46 +3,23 @@
 @tailwind utilities;
 
 /*
-  Color system — dark-first.
-  Gold accent matches federal / CDFM conventions.
-  Values in HSL so Tailwind's opacity modifiers work.
+  Color system follows the standard shadcn pattern:
+    :root holds LIGHT values.
+    .dark class overrides with dark values.
+  Dark mode is the DEFAULT — the no-flash script in app/layout.tsx
+  adds the `dark` class on first paint unless the user has explicitly
+  chosen light mode.
 */
 
 @layer base {
-  /* Dark mode (default) */
-  :root,
-  .dark {
-    --background: 222 20% 7%;          /* near-black, slight blue tint */
-    --foreground: 40 20% 94%;          /* warm off-white */
-    --card: 222 18% 9%;
-    --card-foreground: 40 20% 94%;
-    --popover: 222 18% 9%;
-    --popover-foreground: 40 20% 94%;
-    --primary: 43 55% 52%;             /* #D4AF37 gold */
-    --primary-foreground: 222 20% 7%;
-    --secondary: 222 14% 14%;
-    --secondary-foreground: 40 20% 94%;
-    --muted: 222 14% 14%;
-    --muted-foreground: 40 10% 64%;
-    --accent: 222 14% 16%;
-    --accent-foreground: 40 20% 94%;
-    --destructive: 0 63% 52%;
-    --destructive-foreground: 40 20% 94%;
-    --border: 222 14% 18%;
-    --input: 222 14% 18%;
-    --ring: 43 55% 52%;                /* gold focus ring */
-    --radius: 0.5rem;
-  }
-
-  /* Light mode */
-  .light {
-    --background: 40 20% 98%;          /* warm white */
+  :root {
+    --background: 40 20% 98%;
     --foreground: 222 30% 10%;
     --card: 0 0% 100%;
     --card-foreground: 222 30% 10%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 30% 10%;
-    --primary: 43 60% 42%;             /* darker gold for contrast on white */
+    --primary: 43 60% 42%;
     --primary-foreground: 40 20% 98%;
     --secondary: 40 15% 94%;
     --secondary-foreground: 222 30% 10%;
@@ -55,6 +32,29 @@
     --border: 40 15% 88%;
     --input: 40 15% 88%;
     --ring: 43 60% 42%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 20% 7%;
+    --foreground: 40 20% 94%;
+    --card: 222 18% 9%;
+    --card-foreground: 40 20% 94%;
+    --popover: 222 18% 9%;
+    --popover-foreground: 40 20% 94%;
+    --primary: 43 55% 52%;
+    --primary-foreground: 222 20% 7%;
+    --secondary: 222 14% 14%;
+    --secondary-foreground: 40 20% 94%;
+    --muted: 222 14% 14%;
+    --muted-foreground: 40 10% 64%;
+    --accent: 222 14% 16%;
+    --accent-foreground: 40 20% 94%;
+    --destructive: 0 63% 52%;
+    --destructive-foreground: 40 20% 94%;
+    --border: 222 14% 18%;
+    --input: 222 14% 18%;
+    --ring: 43 55% 52%;
   }
 }
 
@@ -66,20 +66,19 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  /* Gold-accented selection */
   ::selection {
     background: hsl(var(--primary) / 0.3);
     color: hsl(var(--foreground));
   }
 }
 
-/* Gold accent utility for brand marks and emphasis */
-.text-gold { color: hsl(43 55% 58%); }
-.dark .text-gold { color: hsl(43 65% 60%); }
+/* Gold accent utilities — explicit colors so they read the same in both modes */
+.text-gold { color: #B8860B; }
+.dark .text-gold { color: #E8C76A; }
 .bg-gold { background-color: hsl(43 55% 52%); }
 .border-gold { border-color: hsl(43 55% 52%); }
 
-/* Chat / report prose */
+/* Prose styling for chat, reports, and the PB27 analysis page */
 .prose-fed pre { @apply bg-muted rounded-md p-3 text-xs overflow-auto; }
 .prose-fed code { @apply bg-muted px-1 py-0.5 rounded text-sm; }
 .prose-fed table { @apply w-full border-collapse text-sm my-4; }
@@ -93,3 +92,6 @@
 .prose-fed ul, .prose-fed ol { @apply mb-3 pl-6; }
 .prose-fed li { @apply mb-1; }
 .prose-fed strong { @apply font-medium text-foreground; }
+
+/* Smooth scroll for TOC anchor jumps on the PB27 page */
+html { scroll-behavior: smooth; }
