@@ -10,33 +10,58 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 // ------------------------------------------------------------------
-// POST — two modes:
+// POST — two modes depending on Content-Type:
 //
-//   Mode A (small files ≤4MB): multipart/form-data with `file` field
-//     → uploads to Vercel Blob, extracts text, chunks, embeds, saves to DB
+//   A) multipart/form-data  (file ≤ 4MB)
+//      → server reads binary, uploads to Blob, extracts text
 //
-//   Mode B (large files): JSON body with `blobUrl` field
-//     → file already uploaded to Vercel Blob by the client
-//     → just fetch the text, chunk, embed, save to DB
+//   B) application/json  (file > 4MB — text extracted by browser)
+//      → body: { text, filename, mimeType, size, category }
+//      → server stores a tiny marker blob, chunks + embeds the text
 // ------------------------------------------------------------------
 export async function POST(req: NextRequest) {
-  const contentType = req.headers.get('content-type') || ''
+  const ct = req.headers.get('content-type') || ''
   const workspaceId = getWorkspaceId(req)
 
-  // Mode B — client already uploaded to Blob, we just process the URL
-  if (contentType.includes('application/json')) {
+  // ---- Mode B: large file, text already extracted client-side ----
+  if (ct.includes('application/json')) {
     const body = await req.json().catch(() => ({}))
-    const { blobUrl, filename, mimeType, size, category } = body
-    if (!blobUrl || !filename || !category)
-      return NextResponse.json({ error: 'blobUrl, filename, and category required' }, { status: 400 })
+    const { text, filename, mimeType, size, category } = body
 
-    return processBlob({ blobUrl, filename, mimeType, size, category, workspaceId })
+    if (!text || !filename || !category)
+      return NextResponse.json({ error: 'text, filename, and category required' }, { status: 400 })
+    if (!['budget', 'audit', 'accounting', 'contracts'].includes(category))
+      return NextResponse.json({ error: 'invalid category' }, { status: 400 })
+
+    // Store a tiny marker blob so storage_url has a real value
+    let storageUrl = ''
+    try {
+      const marker = await put(
+        `${workspaceId}/${category}/${Date.now()}-${filename}.ref`,
+        `FedFMMatter reference: ${filename} (${size ?? '?'} bytes, client-extracted)`,
+        { access: 'private', contentType: 'text/plain' }
+      )
+      storageUrl = marker.url
+    } catch {
+      storageUrl = `ref:${filename}` // fallback if Blob fails
+    }
+
+    const rows = await sql`
+      insert into public.documents (workspace_id, category, filename, mime_type, size_bytes, storage_url)
+      values (${workspaceId}::uuid, ${category}, ${filename}, ${mimeType ?? ''}, ${size ?? 0}, ${storageUrl})
+      returning id, filename, size_bytes, created_at
+    `
+    const doc = rows[0]
+    const chunkCount = await embedAndStore(text, doc.id)
+
+    return NextResponse.json({ ok: true, document: doc, chunk_count: chunkCount })
   }
 
-  // Mode A — small file via formData
+  // ---- Mode A: small file via FormData (≤ 4MB) ----
   const form = await req.formData()
   const file = form.get('file') as File | null
   const category = form.get('category') as string
+
   if (!file || !category)
     return NextResponse.json({ error: 'file and category required' }, { status: 400 })
   if (!['budget', 'audit', 'accounting', 'contracts'].includes(category))
@@ -49,69 +74,37 @@ export async function POST(req: NextRequest) {
     const blob = await put(
       `${workspaceId}/${category}/${Date.now()}-${file.name}`,
       buffer,
-      { access: 'public', contentType: file.type }
+      { access: 'private', contentType: file.type }
     )
     storageUrl = blob.url
   } catch (e) {
     return NextResponse.json({ error: `Blob upload failed: ${String(e)}` }, { status: 500 })
   }
 
-  return processBlob({
-    blobUrl: storageUrl,
-    filename: file.name,
-    mimeType: file.type,
-    size: buffer.length,
-    category,
-    workspaceId,
-    buffer, // skip re-fetching when we already have the buffer
-  })
-}
-
-// ------------------------------------------------------------------
-// Core: save document record, extract text, chunk, embed
-// ------------------------------------------------------------------
-async function processBlob(params: {
-  blobUrl: string
-  filename: string
-  mimeType: string
-  size: number
-  category: string
-  workspaceId: string
-  buffer?: Buffer
-}) {
-  const { blobUrl, filename, mimeType, size, category, workspaceId } = params
-  let buffer = params.buffer
-
-  // If no buffer yet (Mode B — large file already in Blob), fetch it
-  if (!buffer) {
-    try {
-      const res = await fetch(blobUrl)
-      if (!res.ok) throw new Error(`Failed to fetch blob: ${res.status}`)
-      buffer = Buffer.from(await res.arrayBuffer())
-    } catch (e) {
-      return NextResponse.json({ error: `Could not fetch uploaded file: ${String(e)}` }, { status: 500 })
-    }
-  }
-
-  // Save document record
   const rows = await sql`
     insert into public.documents (workspace_id, category, filename, mime_type, size_bytes, storage_url)
-    values (${workspaceId}::uuid, ${category}, ${filename}, ${mimeType ?? ''}, ${size ?? buffer.length}, ${blobUrl})
+    values (${workspaceId}::uuid, ${category}, ${file.name}, ${file.type}, ${buffer.length}, ${storageUrl})
     returning id, filename, size_bytes, created_at
   `
   const doc = rows[0]
 
-  // Extract text
   let text = ''
   try {
-    text = await extractText(buffer, filename, mimeType ?? '')
+    text = await extractText(buffer, file.name, file.type)
   } catch (e) {
     return NextResponse.json({ error: `Text extraction failed: ${String(e)}`, document: doc }, { status: 500 })
   }
 
-  // Chunk and embed
+  const chunkCount = await embedAndStore(text, doc.id)
+  return NextResponse.json({ ok: true, document: doc, chunk_count: chunkCount })
+}
+
+// ------------------------------------------------------------------
+// Chunk + embed a text string, insert into public.chunks
+// ------------------------------------------------------------------
+async function embedAndStore(text: string, docId: string): Promise<number> {
   const chunks = chunkText(text)
-  let chunkCount = 0
+  let count = 0
   const BATCH = 16
   for (let i = 0; i < chunks.length; i += BATCH) {
     const batch = chunks.slice(i, i + BATCH)
@@ -120,17 +113,16 @@ async function processBlob(params: {
       const embLit = `[${embeddings[j].join(',')}]`
       await sql`
         insert into public.chunks (document_id, chunk_index, content, embedding)
-        values (${doc.id}::uuid, ${i + j}, ${batch[j]}, ${embLit}::vector)
+        values (${docId}::uuid, ${i + j}, ${batch[j]}, ${embLit}::vector)
       `
-      chunkCount++
+      count++
     }
   }
-
-  return NextResponse.json({ ok: true, document: doc, chunk_count: chunkCount })
+  return count
 }
 
 // ------------------------------------------------------------------
-// Text extraction by file type
+// Server-side text extraction (small files only)
 // ------------------------------------------------------------------
 async function extractText(buffer: Buffer, filename: string, mime: string): Promise<string> {
   const lower = filename.toLowerCase()
@@ -154,13 +146,13 @@ async function extractText(buffer: Buffer, filename: string, mime: string): Prom
 }
 
 // ------------------------------------------------------------------
-// GET — list documents for a workspace/category
+// GET — list documents
 // ------------------------------------------------------------------
 export async function GET(req: NextRequest) {
   const workspaceId = getWorkspaceId(req)
   const category = req.nextUrl.searchParams.get('category')
 
-  const documents = category
+  const docs = category
     ? await sql`
         select id, category, filename, size_bytes, storage_url, created_at
         from public.documents
@@ -174,5 +166,5 @@ export async function GET(req: NextRequest) {
         order by created_at desc
       `
 
-  return NextResponse.json({ documents })
+  return NextResponse.json({ documents: docs })
 }

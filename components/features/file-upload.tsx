@@ -3,16 +3,54 @@
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, FileText, Loader2, Check, X } from 'lucide-react'
-import { upload } from '@vercel/blob/client'
 import { formatBytes } from '@/lib/utils'
 
-// Files larger than this go directly from browser to Vercel Blob,
-// bypassing the 4.5MB serverless function body limit.
+// Files above this threshold are text-extracted in the browser,
+// avoiding Vercel's 4.5 MB serverless function body limit.
 const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024 // 4 MB
 
-type UploadState = 'idle' | 'uploading' | 'processing' | 'done' | 'error'
-interface Item { file: File; state: UploadState; message?: string; chunks?: number; progress?: number }
+type UploadState = 'idle' | 'extracting' | 'uploading' | 'done' | 'error'
+interface Item { file: File; state: UploadState; message?: string; chunks?: number }
 
+// ------------------------------------------------------------------
+// Client-side text extraction by file type
+// ------------------------------------------------------------------
+async function extractText(file: File): Promise<string> {
+  const lower = file.name.toLowerCase()
+  const buffer = await file.arrayBuffer()
+
+  // XLSX / XLS — SheetJS works natively in the browser
+  if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+    const XLSX = (await import('xlsx')).default
+    const wb = XLSX.read(buffer, { type: 'array' })
+    return wb.SheetNames.map(
+      (name) => `## Sheet: ${name}\n` + XLSX.utils.sheet_to_csv(wb.Sheets[name])
+    ).join('\n\n')
+  }
+
+  // PDF — pdfjs-dist, lazy-loaded only when needed
+  if (lower.endsWith('.pdf') || file.type === 'application/pdf') {
+    const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist')
+    // Use CDN for the worker to avoid webpack/Next.js bundling complexities
+    GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
+    const pdf = await getDocument({ data: buffer }).promise
+    let text = ''
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p)
+      const content = await page.getTextContent()
+      text += content.items.map((item: any) => item.str ?? '').join(' ') + '\n'
+    }
+    return text
+  }
+
+  // CSV / TXT
+  return new TextDecoder().decode(buffer)
+}
+
+// ------------------------------------------------------------------
+// Component
+// ------------------------------------------------------------------
 export function FileUpload({ category, onComplete }: { category: string; onComplete?: () => void }) {
   const [items, setItems] = useState<Item[]>([])
 
@@ -22,35 +60,17 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
   const handleFile = useCallback(
     async (file: File) => {
       try {
-        let blobUrl: string
-
         if (file.size > LARGE_FILE_THRESHOLD) {
-          // ---- Large file: browser → Vercel Blob directly ----
-          // The file never goes through a serverless function body.
-          // /api/upload/token handles auth/validation server-side.
-          const blob = await upload(
-            `${category}/${Date.now()}-${file.name}`,
-            file,
-            {
-              access: 'public',
-              handleUploadUrl: '/api/upload/token',
-              multipart: true, // parallel chunk uploads for large files
-              onUploadProgress: ({ percentage }) => {
-                update(file, { progress: Math.round(percentage) })
-              },
-            }
-          )
-          blobUrl = blob.url
+          // ---- Large file: extract text client-side, send text to server ----
+          update(file, { state: 'extracting' })
+          const text = await extractText(file)
 
-          // Switch status to processing (text extraction still happens server-side)
-          update(file, { state: 'processing', progress: undefined })
-
-          // Now tell the server to extract text and embed
+          update(file, { state: 'uploading' })
           const res = await fetch('/api/upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              blobUrl,
+              text,
               filename: file.name,
               mimeType: file.type,
               size: file.size,
@@ -61,7 +81,8 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
           if (!res.ok) throw new Error(data.error || 'Processing failed')
           update(file, { state: 'done', chunks: data.chunk_count })
         } else {
-          // ---- Small file: traditional multipart POST ----
+          // ---- Small file: standard multipart POST (server handles everything) ----
+          update(file, { state: 'uploading' })
           const form = new FormData()
           form.append('file', file)
           form.append('category', category)
@@ -70,7 +91,6 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
           if (!res.ok) throw new Error(data.error || 'Upload failed')
           update(file, { state: 'done', chunks: data.chunk_count })
         }
-
         onComplete?.()
       } catch (e: any) {
         update(file, { state: 'error', message: e?.message || String(e) })
@@ -81,7 +101,7 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
 
   const onDrop = useCallback(
     (accepted: File[]) => {
-      const additions: Item[] = accepted.map((f) => ({ file: f, state: 'uploading' }))
+      const additions: Item[] = accepted.map((f) => ({ file: f, state: 'idle' }))
       setItems((prev) => [...prev, ...additions])
       additions.forEach((it) => handleFile(it.file))
     },
@@ -97,7 +117,7 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
       'text/csv': ['.csv'],
       'text/plain': ['.txt', '.md'],
     },
-    maxSize: 50 * 1024 * 1024, // 50 MB (handled by Vercel Blob for large files)
+    maxSize: 200 * 1024 * 1024, // 200 MB limit (browser-side extraction handles large files)
   })
 
   return (
@@ -113,7 +133,9 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
         <p className="text-sm">
           {isDragActive ? 'Drop files here' : 'Drag and drop PDF, XLSX, CSV, or TXT — or click to select'}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">Up to 50 MB · Category: {category}</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Up to 200 MB · Large files are processed in the browser · Category: {category}
+        </p>
       </div>
 
       {items.length > 0 && (
@@ -125,16 +147,16 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
                 <span className="flex-1 truncate">{it.file.name}</span>
                 <span className="text-xs text-muted-foreground">{formatBytes(it.file.size)}</span>
 
+                {it.state === 'extracting' && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    reading…
+                  </span>
+                )}
                 {it.state === 'uploading' && (
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    {it.progress !== undefined ? `${it.progress}%` : 'uploading…'}
-                  </span>
-                )}
-                {it.state === 'processing' && (
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    processing…
+                    embedding…
                   </span>
                 )}
                 {it.state === 'done' && (
@@ -145,16 +167,6 @@ export function FileUpload({ category, onComplete }: { category: string; onCompl
                 )}
                 {it.state === 'error' && <X className="h-4 w-4 text-destructive" />}
               </div>
-
-              {/* Progress bar for large files uploading */}
-              {it.state === 'uploading' && it.progress !== undefined && (
-                <div className="mt-2 h-1 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-300"
-                    style={{ width: `${it.progress}%` }}
-                  />
-                </div>
-              )}
 
               {it.state === 'error' && it.message && (
                 <div className="mt-2 pl-7 text-xs text-destructive break-words">{it.message}</div>
