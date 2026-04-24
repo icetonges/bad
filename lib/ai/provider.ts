@@ -123,7 +123,7 @@ async function callGemini(
     })),
   }] : undefined
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${spec.model}:generateContent?key=${apiKey}`
+  const url = `https://generativelanguage.googleapis.com/v1/models/${spec.model}:generateContent?key=${apiKey}`
   const body: any = {
     contents,
     systemInstruction: { parts: [{ text: params.system }] },

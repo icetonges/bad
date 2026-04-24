@@ -3,7 +3,7 @@
  * https://ai.google.dev/gemini-api/docs/embeddings
  */
 
-const GEMINI_EMBED_URL = 'https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent'
+const GEMINI_EMBED_URL = 'https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent'
 
 export async function embedText(text: string): Promise<number[]> {
   const apiKey = process.env.GOOGLE_API_KEY
