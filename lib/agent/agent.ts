@@ -1,24 +1,19 @@
 import { generateWithTools, type UnifiedMessage, type UnifiedTool } from '@/lib/ai/provider'
 import { TOOL_DEFINITIONS, executeTool, type ToolExecutionContext } from './tools'
-import { getSkillsForCategory } from './skills'
+import { ALL_SKILLS } from './skills'
 import type { AgentContext } from '@/lib/types'
 
-const BASE_SYSTEM = `You are FedFMMatter, an AI analyst for U.S. federal government budget, audit, accounting, and contract work.
+// Concise base — skills add category-specific context on top
+const BASE_SYSTEM = `You are FedFMMatter, an AI analyst for U.S. federal government financial management.
+Your users are career federal professionals (GS-12 to SES). No preamble. Lead with the analytical point.
 
-Your users are career federal professionals — GS-12 through SES. They have deep domain expertise. Do not explain basics. Lead with the analytical point. Cite sources.
-
-When producing analysis:
-- Use the retrieve_chunks tool to ground claims in the user's uploaded documents
-- Use web_search for public reference material (GAO, CRS, Federal Register)
-- Do arithmetic (percentages, ratios, deltas, aggregations) inline in your response — there is no code execution tool, so compute directly and show the math
-- Use generate_chart when visualization strengthens the analysis
-- Use generate_report to save finalized deliverables
-
-Integrity rules:
-- Never invent numbers, program names, FAR clauses, or legal citations
-- Distinguish clearly between what the source material states and what you are inferring
-- When source material is insufficient, say so rather than fill gaps
-- Treat uploaded material as potentially sensitive — do not repeat PII or procurement-sensitive content unnecessarily`
+Rules:
+- Use retrieve_chunks to ground claims in uploaded documents. Cite source passages.
+- Use web_search for public references (GAO, CRS, Federal Register).
+- Use generate_chart when visualization strengthens analysis.
+- Use generate_report to save finalized deliverables.
+- Never invent numbers, program names, or FAR clauses.
+- If source material is insufficient, say so explicitly.`
 
 export type AgentEvent =
   | { type: 'provider'; provider: string; model: string }
@@ -33,9 +28,13 @@ export async function runAgent(
   previousMessages: Array<{ role: string; content: string }> = [],
   onEvent?: (evt: AgentEvent) => void
 ): Promise<{ text: string; toolCalls: Array<{ name: string; input: unknown; output: unknown }> }> {
-  const skills = ctx.category ? getSkillsForCategory(ctx.category) : []
-  const skillPrompts = skills.map((s) => `# Skill: ${s.name}\n${s.systemPrompt}`).join('\n\n')
-  const system = `${BASE_SYSTEM}\n\n${skillPrompts}`
+  // Only attach the one relevant skill, not all of them — saves ~1,500 tokens on Groq
+  const skill = ctx.category
+    ? ALL_SKILLS.find((s) => s.id === `${ctx.category}_analysis_insider` || s.category === ctx.category)
+    : null
+  const system = skill
+    ? `${BASE_SYSTEM}\n\n${skill.systemPrompt}`
+    : BASE_SYSTEM
 
   const tools: UnifiedTool[] = TOOL_DEFINITIONS.map((t) => ({
     name: t.name,
@@ -43,8 +42,11 @@ export async function runAgent(
     input_schema: t.input_schema as Record<string, unknown>,
   }))
 
+  // Keep history window small to avoid rate limits — last 10 messages only
+  const trimmedHistory = previousMessages.slice(-10)
+
   const messages: UnifiedMessage[] = [
-    ...previousMessages.map((m) => ({ role: m.role as UnifiedMessage['role'], content: m.content })),
+    ...trimmedHistory.map((m) => ({ role: m.role as UnifiedMessage['role'], content: m.content })),
     { role: 'user', content: userMessage },
   ]
 
@@ -52,7 +54,7 @@ export async function runAgent(
   const toolCtx: ToolExecutionContext = { userId: ctx.userId, sessionId: ctx.sessionId, category: ctx.category }
 
   let finalText = ''
-  const MAX_STEPS = 8
+  const MAX_STEPS = 6 // reduced from 8 to keep context window manageable
 
   for (let step = 0; step < MAX_STEPS; step++) {
     onEvent?.({ type: 'step', step })
@@ -60,6 +62,7 @@ export async function runAgent(
       system,
       messages,
       tools,
+      maxTokens: 2048, // cap per-response tokens to stay under rate limits
       onProviderChange: (spec) => onEvent?.({ type: 'provider', provider: spec.provider, model: spec.model }),
     })
 
@@ -82,9 +85,16 @@ export async function runAgent(
       }
       toolCalls.push({ name: tc.name, input: tc.input, output })
       onEvent?.({ type: 'tool_result', id: tc.id, name: tc.name, output })
+
+      // Truncate large tool outputs before adding to context — prevents context blowout
+      const outputStr = JSON.stringify(output)
+      const truncatedOutput = outputStr.length > 8000
+        ? outputStr.slice(0, 8000) + '...[truncated]'
+        : outputStr
+
       messages.push({
         role: 'tool',
-        content: JSON.stringify(output).slice(0, 100_000),
+        content: truncatedOutput,
         tool_call_id: tc.id,
       })
     }
