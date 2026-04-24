@@ -2,11 +2,8 @@
 /**
  * Apply SQL migrations to Neon.
  *
- * Handles common failure modes:
- *  - PL/pgSQL function bodies with internal semicolons (uses $$ boundaries)
- *  - Idempotency (re-run is safe; all DDL uses IF NOT EXISTS or OR REPLACE)
- *  - Connection failures (verbose error with hint)
- *  - Permission errors (verbose error with hint)
+ * FIX: uses @neondatabase/serverless Pool (standard pg-compatible interface)
+ * instead of the neon() tagged-template, which does NOT have a .query() method.
  *
  * Usage:  node scripts/migrate.mjs
  * Env:    DATABASE_URL (read from .env.local or process env)
@@ -14,9 +11,13 @@
 import { readFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { neon } from '@neondatabase/serverless'
+import { Pool, neonConfig } from '@neondatabase/serverless'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Required for Pool in a Node.js (non-edge) environment
+import ws from 'ws'
+neonConfig.webSocketConstructor = ws
 
 // Load .env.local if present
 try {
@@ -42,14 +43,16 @@ if (!url) {
 let host
 try { host = new URL(url).host } catch { host = '(unparseable)' }
 
-const sql = neon(url)
+// Pool gives us a standard client.query(string) interface
+const pool = new Pool({ connectionString: url })
+const client = await pool.connect()
+
 const migrationsDir = join(__dirname, '..', 'db', 'migrations')
 const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()
 
 console.log(`\n→ Applying ${files.length} migration(s) to ${host}\n`)
 
 // Split SQL on `;` at end-of-statement, but NOT inside $$...$$ function bodies
-// or single-quoted strings.
 function splitStatements(sqlText) {
   const statements = []
   let current = ''
@@ -97,45 +100,56 @@ function stripComments(sqlText) {
 let totalOk = 0
 let totalSkipped = 0
 
-for (const file of files) {
-  console.log(`  ${file}`)
-  const contents = stripComments(readFileSync(join(migrationsDir, file), 'utf8'))
-  const statements = splitStatements(contents)
+try {
+  for (const file of files) {
+    console.log(`  ${file}`)
+    const contents = stripComments(readFileSync(join(migrationsDir, file), 'utf8'))
+    const statements = splitStatements(contents)
 
-  for (const stmt of statements) {
-    const preview = stmt.replace(/\s+/g, ' ').slice(0, 70)
-    try {
-      await sql.query(stmt)
-      totalOk++
-      console.log(`    ✓ ${preview}${preview.length >= 70 ? '...' : ''}`)
-    } catch (e) {
-      const msg = e.message || String(e)
-      // Idempotent-ish failures we can safely ignore
-      if (/already exists/i.test(msg) || /duplicate key/i.test(msg)) {
-        totalSkipped++
-        console.log(`    ⊙ ${preview} (already exists — skipped)`)
-        continue
-      }
-      console.error(`\n❌ Failed on statement:\n    ${preview}${preview.length >= 70 ? '...' : ''}`)
-      console.error(`   Error: ${msg}`)
-      console.error(`\n   Full statement:`)
-      console.error(stmt.split('\n').map((l) => '     ' + l).join('\n'))
+    for (const stmt of statements) {
+      if (!stmt.trim()) continue
+      const preview = stmt.replace(/\s+/g, ' ').slice(0, 70)
+      try {
+        await client.query(stmt)          // ← standard pg .query() — works on Pool client
+        totalOk++
+        console.log(`    ✓ ${preview}${preview.length >= 70 ? '...' : ''}`)
+      } catch (e) {
+        const msg = e.message || String(e)
 
-      // Hints by error family
-      if (/permission denied/i.test(msg)) {
-        console.error(`\n   💡 Permission error. Your DATABASE_URL role lacks DDL privileges.`)
-        console.error(`      Check that you're using the owner role, not a restricted role.\n`)
-      } else if (/extension.*not.*available/i.test(msg) || /could not open extension/i.test(msg)) {
-        console.error(`\n   💡 Extension not available.`)
-        console.error(`      For pgvector on Neon: open Neon SQL editor and run:`)
-        console.error(`      CREATE EXTENSION IF NOT EXISTS vector;`)
-        console.error(`      (Extensions sometimes need to be enabled via Neon Console first.)\n`)
-      } else if (/relation .* does not exist/i.test(msg)) {
-        console.error(`\n   💡 A dependent table is missing. The earlier statements may have failed silently.\n`)
+        // Idempotent failures — safe to skip
+        if (/already exists/i.test(msg) || /duplicate key/i.test(msg)) {
+          totalSkipped++
+          console.log(`    ⊙ ${preview} (already exists — skipped)`)
+          continue
+        }
+
+        console.error(`\n❌ Failed on statement:\n    ${preview}${preview.length >= 70 ? '...' : ''}`)
+        console.error(`   Error: ${msg}`)
+        console.error(`\n   Full statement:`)
+        console.error(stmt.split('\n').map((l) => '     ' + l).join('\n'))
+
+        if (/permission denied/i.test(msg)) {
+          console.error(`\n   💡 Permission error. Use the owner role in DATABASE_URL (not a restricted role).\n`)
+        } else if (/extension.*not.*available/i.test(msg) || /could not open extension/i.test(msg)) {
+          console.error(`\n   💡 Extension unavailable. In Neon SQL editor run:`)
+          console.error(`      CREATE EXTENSION IF NOT EXISTS vector;`)
+          console.error(`      CREATE EXTENSION IF NOT EXISTS "uuid-ossp";\n`)
+        } else if (/relation .* does not exist/i.test(msg)) {
+          console.error(`\n   💡 Dependent table missing — an earlier statement may have failed.\n`)
+        } else if (/webSocket/i.test(msg) || /ECONNREFUSED/i.test(msg)) {
+          console.error(`\n   💡 Connection error. Check DATABASE_URL is the pooled connection string`)
+          console.error(`      (should contain -pooler in the hostname) and that Neon is not suspended.\n`)
+        }
+
+        client.release()
+        await pool.end()
+        process.exit(1)
       }
-      process.exit(1)
     }
   }
+} finally {
+  client.release()
+  await pool.end()
 }
 
 console.log(`\n✓ Migration complete — ${totalOk} statement(s) applied, ${totalSkipped} skipped (already existed)\n`)
