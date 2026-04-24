@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import {
   ArrowRight, BarChart3, ShieldCheck, Coins, FileSignature,
-  Bot, Database, FileCheck, ExternalLink,
+  Bot, Database, FileCheck,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/features/theme-toggle'
 
@@ -25,32 +25,8 @@ export default function Landing() {
         </div>
       </nav>
 
-      {/* ── Hero — tight, no wasted space ── */}
-      <section className="container pt-10 pb-8 md:pt-14 md:pb-10">
-        <div className="max-w-3xl">
-          <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-gold mb-3">
-            For federal financial management
-          </p>
-          <h1 className="text-3xl md:text-4xl font-medium tracking-tight leading-tight mb-4">
-            An AI analyst for budget, audit, accounting, and contract work.
-          </h1>
-          <p className="text-base text-muted-foreground leading-relaxed mb-6 max-w-2xl">
-            Upload PB justifications, audit reports, financial statements, and contract files.
-            Get insider analysis and standard reporting from an agent that understands how federal programs actually work.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 transition">
-              Open workspace <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link href="/dashboard/chat" className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent transition">
-              Ask the agent
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Featured analyses — directly below hero, no gap ── */}
-      <section className="container pb-10">
+      {/* ── Featured analyses — first thing after nav ── */}
+      <section className="container pt-8 pb-8">
         <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-muted-foreground mb-4">
           Featured analyses
         </p>
@@ -72,12 +48,12 @@ export default function Landing() {
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
               A portfolio manager's reference to the $1.45T request — topline architecture, the $350B mandatory tranche, procurement across 19 appropriation titles, MAC munitions, AI/autonomy portfolio, and Advana → WDP restructuring.
             </p>
-            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border">
+            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border mb-3">
               <Stat value="$1.45T" label="Total request" />
               <Stat value="243×" label="DAWG growth" gold />
               <Stat value="$46B" label="Sovereign AI" />
             </div>
-            <div className="flex flex-wrap gap-1.5 mt-3">
+            <div className="flex flex-wrap gap-1.5">
               {['12 sections', '8 charts', 'Winners & losers', 'Execution risks'].map((t) => (
                 <span key={t} className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>
               ))}
@@ -100,12 +76,12 @@ export default function Landing() {
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
               The FY2025 disclaimer, the FY2028 goal, and the data platform that has to bridge them — 26 material weaknesses mapped to Advana capabilities, AI/ML remediation plays, and a 90-day to FY2028 execution roadmap.
             </p>
-            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border">
+            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border mb-3">
               <Stat value="26" label="Material weaknesses" />
               <Stat value="$859B" label="Unsupported adj." gold />
               <Stat value="FY28" label="Clean audit target" />
             </div>
-            <div className="flex flex-wrap gap-1.5 mt-3">
+            <div className="flex flex-wrap gap-1.5">
               {['13 sections', 'Advana remediation', 'AI/ML plays', 'Roadmap'].map((t) => (
                 <span key={t} className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>
               ))}
@@ -115,7 +91,31 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Four practice areas ── */}
+      {/* ── Hero ── */}
+      <section className="container pb-10">
+        <div className="rounded-lg border border-border bg-card/40 px-8 py-8 md:px-10 md:py-10 max-w-full">
+          <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-gold mb-3">
+            For federal financial management
+          </p>
+          <h1 className="text-3xl md:text-4xl font-medium tracking-tight leading-tight mb-4 max-w-3xl">
+            An AI analyst for budget, audit, accounting, and contract work.
+          </h1>
+          <p className="text-base text-muted-foreground leading-relaxed mb-6 max-w-2xl">
+            Upload PB justifications, audit reports, financial statements, and contract files.
+            Get insider analysis and standard reporting from an agent that understands how federal programs actually work.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 transition">
+              Open workspace <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link href="/dashboard/chat" className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent transition">
+              Ask the agent
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Practice areas ── */}
       <section className="container pb-12">
         <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-muted-foreground mb-4">
           Practice areas
@@ -128,7 +128,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── How the agent works ── */}
+      {/* ── How it works ── */}
       <section className="border-t border-border bg-muted/20">
         <div className="container py-12">
           <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-muted-foreground mb-8">How it works</p>
@@ -148,7 +148,7 @@ export default function Landing() {
         <div className="container py-6 text-xs text-muted-foreground flex flex-wrap gap-4 justify-between">
           <p>FedFMMatter — not affiliated with any federal agency. Do not upload classified or CUI material.</p>
           <div className="flex gap-4">
-            <Link href="/about"   className="hover:text-foreground">About</Link>
+            <Link href="/about" className="hover:text-foreground">About</Link>
             <Link href="/contact" className="hover:text-foreground">Contact</Link>
           </div>
         </div>
@@ -157,8 +157,6 @@ export default function Landing() {
     </div>
   )
 }
-
-// ── Sub-components ──────────────────────────────────────────
 
 function Stat({ value, label, gold }: { value: string; label: string; gold?: boolean }) {
   return (
