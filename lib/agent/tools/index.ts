@@ -15,14 +15,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'retrieve_chunks',
     description:
-      "Semantic search across uploaded documents. Returns the most relevant passages with source document IDs. Use whenever the user asks about their uploaded documents, or when analysis should be grounded in source material.",
+      "Semantic search across ALL uploaded documents in the user's workspace. Pass a natural language query — returns the most relevant passages from any document. Call this immediately when the user asks about their documents. Do NOT ask the user for document names or IDs first.",
     input_schema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Natural language query.' },
-        document_ids: { type: 'array', items: { type: 'string' } },
-        limit: { type: 'number', description: 'Max passages. Default 8, max 20.' },
-        category: { type: 'string', enum: ['budget', 'audit', 'accounting', 'contracts'] },
+        query: { type: 'string', description: 'Natural language query — e.g. "FY27 procurement topline by service" or "material weaknesses related to FBWT"' },
+        limit: { type: 'number', description: 'Number of passages to return (default 10, max 20).' },
+        category: { type: 'string', enum: ['budget', 'audit', 'accounting', 'contracts'], description: 'Optional filter by category.' },
       },
       required: ['query'],
     },
@@ -108,15 +107,14 @@ export async function executeTool(
 }
 
 async function retrieveChunks(
-  input: { query: string; document_ids?: string[]; limit?: number; category?: string },
+  input: { query: string; limit?: number; category?: string },
   ctx: ToolExecutionContext
 ) {
   try {
     const embedding = await embedQuery(input.query)
     const embeddingLit = `[${embedding.join(',')}]`
-    const limit = Math.min(input.limit ?? 8, 20)
+    const limit = Math.min(input.limit ?? 10, 20)
     const workspaceId = ctx.userId || DEFAULT_WORKSPACE_ID
-    const docIds = input.document_ids ?? null
 
     const rows = await sql`
       select
@@ -125,10 +123,9 @@ async function retrieveChunks(
       from public.chunks c
       join public.documents d on d.id = c.document_id
       where d.workspace_id = ${workspaceId}::uuid
-        and (${docIds}::uuid[] is null or c.document_id = any(${docIds}::uuid[]))
         and c.embedding is not null
-        and (${input.category}::text is null or d.category = ${input.category})
-        and 1 - (c.embedding <=> ${embeddingLit}::vector) > 0.35
+        and (${input.category ?? null}::text is null or d.category = ${input.category ?? null})
+        and 1 - (c.embedding <=> ${embeddingLit}::vector) > 0.20
       order by c.embedding <=> ${embeddingLit}::vector
       limit ${limit}
     `
@@ -136,32 +133,27 @@ async function retrieveChunks(
     // If no chunks found, check whether documents exist at all
     if (rows.length === 0) {
       const docCheck = await sql`
-        select count(*)::int as doc_count,
-               sum(case when c.id is not null then 1 else 0 end)::int as chunk_count
+        select count(d.id)::int as doc_count,
+               coalesce(sum((select count(*) from public.chunks c where c.document_id = d.id))::int, 0) as chunk_count
         from public.documents d
-        left join public.chunks c on c.document_id = d.id
         where d.workspace_id = ${workspaceId}::uuid
-          and (${input.category}::text is null or d.category = ${input.category})
+          and (${input.category ?? null}::text is null or d.category = ${input.category ?? null})
       `
       const { doc_count, chunk_count } = docCheck[0] ?? {}
-      if (doc_count === 0) {
-        return { chunks: [], note: 'No documents have been uploaded yet. Upload files in the Document library first.' }
-      }
-      if (chunk_count === 0) {
-        return { chunks: [], note: `${doc_count} document(s) found but none are indexed yet. Go to the Document library and click "Re-embed" on each file — this happens when GOOGLE_API_KEY was not set at upload time.` }
-      }
-      return { chunks: [], note: 'No passages matched your query. Try rephrasing or broadening the question.' }
+      if (!doc_count || doc_count === 0)
+        return { chunks: [], note: 'No documents uploaded yet. Upload files in the Document library first.' }
+      if (!chunk_count || chunk_count === 0)
+        return { chunks: [], note: `${doc_count} document(s) found but not indexed. Go to the Document library and click Re-embed on each file.` }
+      return { chunks: [], note: 'No passages matched this query. Try a broader or rephrased query.' }
     }
 
     return { chunks: rows }
   } catch (e: any) {
     const msg = String(e)
-    if (/GOOGLE_API_KEY/i.test(msg) || /API_KEY/i.test(msg)) {
-      return { error: 'GOOGLE_API_KEY is not set. Add it to Vercel environment variables (Settings → Environment Variables), then redeploy.', chunks: [] }
-    }
-    if (/relation .* does not exist/i.test(msg)) {
+    if (/GOOGLE_API_KEY/i.test(msg))
+      return { error: 'GOOGLE_API_KEY is not set in Vercel environment variables.', chunks: [] }
+    if (/relation .* does not exist/i.test(msg))
       return { error: 'Database tables missing. Run: npm run db:migrate', chunks: [] }
-    }
     return { error: msg, chunks: [] }
   }
 }
