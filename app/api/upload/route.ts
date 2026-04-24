@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       const marker = await put(
         `${workspaceId}/${category}/${Date.now()}-${filename}.ref`,
         `FedFMMatter reference: ${filename} (${size ?? '?'} bytes, client-extracted)`,
-        { access: 'private', contentType: 'text/plain' }
+        { access: 'public', contentType: 'text/plain' }
       )
       storageUrl = marker.url
     } catch {
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     const blob = await put(
       `${workspaceId}/${category}/${Date.now()}-${file.name}`,
       buffer,
-      { access: 'private', contentType: file.type }
+      { access: 'public', contentType: file.type }
     )
     storageUrl = blob.url
   } catch (e) {

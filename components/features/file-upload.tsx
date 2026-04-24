@@ -30,11 +30,11 @@ async function extractText(file: File): Promise<string> {
 
   // PDF — pdfjs-dist, lazy-loaded only when needed
   if (lower.endsWith('.pdf') || file.type === 'application/pdf') {
-    const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist')
-    // Use CDN for the worker to avoid webpack/Next.js bundling complexities
-    GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
-    const pdf = await getDocument({ data: buffer }).promise
+    const pdfjsLib = await import('pdfjs-dist')
+    // Use the package's own version string so the CDN worker always matches
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
     let text = ''
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p)
