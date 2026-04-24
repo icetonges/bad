@@ -189,16 +189,22 @@ export async function GET(req: NextRequest) {
 
     const docs = category
       ? await sql`
-          select id, category, filename, size_bytes, storage_url, created_at
-          from public.documents
-          where workspace_id = ${workspaceId}::uuid and category = ${category}
-          order by created_at desc
+          select d.id, d.category, d.filename, d.size_bytes, d.storage_url, d.created_at,
+                 count(c.id)::int as chunk_count
+          from public.documents d
+          left join public.chunks c on c.document_id = d.id
+          where d.workspace_id = ${workspaceId}::uuid and d.category = ${category}
+          group by d.id
+          order by d.created_at desc
         `
       : await sql`
-          select id, category, filename, size_bytes, storage_url, created_at
-          from public.documents
-          where workspace_id = ${workspaceId}::uuid
-          order by created_at desc
+          select d.id, d.category, d.filename, d.size_bytes, d.storage_url, d.created_at,
+                 count(c.id)::int as chunk_count
+          from public.documents d
+          left join public.chunks c on c.document_id = d.id
+          where d.workspace_id = ${workspaceId}::uuid
+          group by d.id
+          order by d.created_at desc
         `
 
     return NextResponse.json({ documents: docs })

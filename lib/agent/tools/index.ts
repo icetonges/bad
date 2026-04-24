@@ -132,9 +132,37 @@ async function retrieveChunks(
       order by c.embedding <=> ${embeddingLit}::vector
       limit ${limit}
     `
+
+    // If no chunks found, check whether documents exist at all
+    if (rows.length === 0) {
+      const docCheck = await sql`
+        select count(*)::int as doc_count,
+               sum(case when c.id is not null then 1 else 0 end)::int as chunk_count
+        from public.documents d
+        left join public.chunks c on c.document_id = d.id
+        where d.workspace_id = ${workspaceId}::uuid
+          and (${input.category}::text is null or d.category = ${input.category})
+      `
+      const { doc_count, chunk_count } = docCheck[0] ?? {}
+      if (doc_count === 0) {
+        return { chunks: [], note: 'No documents have been uploaded yet. Upload files in the Document library first.' }
+      }
+      if (chunk_count === 0) {
+        return { chunks: [], note: `${doc_count} document(s) found but none are indexed yet. Go to the Document library and click "Re-embed" on each file — this happens when GOOGLE_API_KEY was not set at upload time.` }
+      }
+      return { chunks: [], note: 'No passages matched your query. Try rephrasing or broadening the question.' }
+    }
+
     return { chunks: rows }
-  } catch (e) {
-    return { error: String(e), chunks: [] }
+  } catch (e: any) {
+    const msg = String(e)
+    if (/GOOGLE_API_KEY/i.test(msg) || /API_KEY/i.test(msg)) {
+      return { error: 'GOOGLE_API_KEY is not set. Add it to Vercel environment variables (Settings → Environment Variables), then redeploy.', chunks: [] }
+    }
+    if (/relation .* does not exist/i.test(msg)) {
+      return { error: 'Database tables missing. Run: npm run db:migrate', chunks: [] }
+    }
+    return { error: msg, chunks: [] }
   }
 }
 
