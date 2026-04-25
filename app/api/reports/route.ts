@@ -34,3 +34,15 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ reports })
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const workspaceId = getWorkspaceId(req)
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+    await sql`delete from public.reports where id = ${id}::uuid and workspace_id = ${workspaceId}::uuid`
+    return NextResponse.json({ ok: true })
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })
+  }
+}

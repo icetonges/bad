@@ -1,8 +1,48 @@
+'use client'
+
 import Link from 'next/link'
-import { ArrowRight, ShieldCheck, ClipboardCheck, AlertTriangle, RefreshCw, FolderOpen, FileCheck, FileStack } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  ArrowRight, ShieldCheck, ClipboardCheck, AlertTriangle,
+  RefreshCw, FolderOpen, FileCheck, FileStack, Loader2,
+} from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 
+interface DocStats {
+  total_docs: number
+  indexed_docs: number
+  total_chunks: number
+}
+
+function usePulseStats() {
+  const [stats, setStats] = useState<DocStats | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/upload?category=audit')
+      .then(r => r.json())
+      .then(data => {
+        const docs = data.documents ?? []
+        setStats({
+          total_docs: docs.length,
+          indexed_docs: docs.filter((d: any) => (d.chunk_count ?? 0) > 0).length,
+          total_chunks: docs.reduce((s: number, d: any) => s + (d.chunk_count ?? 0), 0),
+        })
+      })
+      .catch(() => setStats({ total_docs: 0, indexed_docs: 0, total_chunks: 0 }))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return { stats, loading }
+}
+
 export default function AuditPage() {
+  const { stats, loading } = usePulseStats()
+
+  const hasDocuments = (stats?.total_docs ?? 0) > 0
+  const allIndexed = hasDocuments && stats?.indexed_docs === stats?.total_docs
+  const someUnindexed = hasDocuments && (stats?.indexed_docs ?? 0) < (stats?.total_docs ?? 0)
+
   return (
     <div className="p-8 max-w-6xl w-full">
       <header className="mb-8">
@@ -13,6 +53,7 @@ export default function AuditPage() {
         </p>
       </header>
 
+      {/* Featured analysis */}
       <section className="mb-10">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Featured analysis</p>
         <Link href="/dashboard/audit/inside" className="group block">
@@ -29,14 +70,10 @@ export default function AuditPage() {
                   </div>
                   <h3 className="font-medium text-base mb-1.5">FY2025 audit, FY2028 clean-opinion goal, and Advana as the bridge</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-                    A portfolio manager's reference to the 8th consecutive disclaimer: 26 material weaknesses, $1T+ in exposed balances, FY28 agency-wide commitment, and how Advana's data platform, UoT engine, and agentic AI close the gap. Heavy emphasis on data-driven remediation.
+                    A portfolio manager's reference to the 8th consecutive disclaimer: 26 material weaknesses, $1T+ in exposed balances, FY28 agency-wide commitment, and how Advana's data platform, UoT engine, and agentic AI close the gap.
                   </p>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span>14 sections</span>
-                    <span>·</span>
-                    <span>10 AI/ML remediation plays</span>
-                    <span>·</span>
-                    <span>USMC playbook</span>
+                    <span>14 sections</span><span>·</span><span>10 AI/ML remediation plays</span><span>·</span><span>USMC playbook</span>
                   </div>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition shrink-0 mt-1" />
@@ -46,46 +83,91 @@ export default function AuditPage() {
         </Link>
       </section>
 
+      {/* Pulse — live data */}
       <section className="mb-10">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Pulse</p>
+
+        {someUnindexed && (
+          <div className="mb-3 rounded-md border border-gold/40 bg-gold/5 p-3 text-xs text-muted-foreground flex items-center gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-gold shrink-0" />
+            {stats!.total_docs - stats!.indexed_docs} document(s) uploaded but not indexed.{' '}
+            <Link href="/dashboard/audit/library" className="text-gold underline underline-offset-2">Go to library → Re-embed</Link>
+          </div>
+        )}
+
         <div className="grid gap-3 md:grid-cols-4">
-          <PulseCard icon={AlertTriangle} label="Open findings" value="—" sub="Upload reports to populate" tone="destructive" />
-          <PulseCard icon={RefreshCw} label="Repeat findings" value="—" sub="Recurring from prior year" tone="warning" />
-          <PulseCard icon={ClipboardCheck} label="CAPs on track" value="—" sub="On-schedule corrective actions" tone="ok" />
-          <PulseCard icon={FileCheck} label="Opinion readiness" value="—" sub="Agent-assessed score" tone="neutral" />
+          {/* Documents uploaded */}
+          <PulseCard
+            icon={FolderOpen}
+            label="Documents uploaded"
+            value={loading ? '…' : String(stats?.total_docs ?? 0)}
+            sub={loading ? 'Loading…' : hasDocuments ? `${stats!.indexed_docs} of ${stats!.total_docs} indexed` : 'Upload audit files to start'}
+            tone={!hasDocuments ? 'neutral' : allIndexed ? 'ok' : 'warning'}
+          />
+
+          {/* Searchable chunks */}
+          <PulseCard
+            icon={ShieldCheck}
+            label="Searchable passages"
+            value={loading ? '…' : String(stats?.total_chunks ?? 0)}
+            sub={loading ? 'Loading…' : stats?.total_chunks ? 'Ready for agent analysis' : 'Index your documents first'}
+            tone={stats?.total_chunks ? 'ok' : 'neutral'}
+          />
+
+          {/* Open findings — populated by agent */}
+          <PulseCard
+            icon={AlertTriangle}
+            label="Open findings"
+            value="—"
+            sub={hasDocuments ? 'Ask agent: Summarize findings' : 'Upload IG/GAO reports first'}
+            tone="neutral"
+            actionHref={hasDocuments ? `/dashboard/chat?category=audit&prompt=${encodeURIComponent('Count and list all open findings in my uploaded audit documents. Separate material weaknesses from significant deficiencies.')}` : undefined}
+          />
+
+          {/* Opinion readiness */}
+          <PulseCard
+            icon={FileCheck}
+            label="Opinion readiness"
+            value="—"
+            sub={hasDocuments ? 'Ask agent: Opinion assessment' : 'Upload audit reports first'}
+            tone="neutral"
+            actionHref={hasDocuments ? `/dashboard/chat?category=audit&prompt=${encodeURIComponent('Assess the likelihood of achieving an improved audit opinion in the next cycle based on my uploaded documents.')}` : undefined}
+          />
         </div>
       </section>
 
+      {/* Quick actions */}
       <section className="mb-10">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Quick actions</p>
         <div className="grid gap-3 md:grid-cols-2">
           <QuickAction
-            prompt="Summarize all findings and recommendations in my uploaded audit documents. Separate material weaknesses from significant deficiencies. Flag repeat findings."
+            prompt="Summarize all findings and recommendations in my uploaded audit documents. Separate material weaknesses from significant deficiencies. Flag repeat findings. Produce a chart of findings by category."
             icon={ShieldCheck}
             title="Summarize findings"
-            copy="All findings, separated by material weakness / significant deficiency, with repeat-finding flags."
+            copy="All findings by type, with repeat-finding flags and a breakdown chart."
           />
           <QuickAction
-            prompt="Build a Corrective Action Plan status table from my uploaded documents. Show open vs closed, due dates, and owners."
+            prompt="Build a Corrective Action Plan status table from my uploaded documents. Show open vs closed, due dates, owners, and whether each is on track."
             icon={ClipboardCheck}
             title="CAP status table"
             copy="Open vs closed corrective actions, milestone dates, assigned owners."
           />
           <QuickAction
-            prompt="Assess the likelihood of achieving an improved audit opinion in the next cycle based on findings in my uploaded documents. Reference FMFIA, FFMIA, A-123 where applicable."
+            prompt="Assess the likelihood of achieving an improved audit opinion in the next cycle based on findings in my uploaded documents. Reference FMFIA, FFMIA, A-123 where applicable. Be specific about which material weaknesses are closest to closure."
             icon={FileCheck}
             title="Opinion readiness assessment"
-            copy="Likelihood scoring for next-cycle opinion improvement, referencing FMFIA/FFMIA/A-123."
+            copy="Closure likelihood per weakness, referencing FMFIA/FFMIA/A-123."
           />
           <QuickAction
-            prompt="Compare findings in my uploaded audit reports across years. Identify trend patterns and recurring issues."
+            prompt="Compare findings in my uploaded audit reports across years. Identify trend patterns and recurring issues. Show a chart of finding counts over time."
             icon={RefreshCw}
             title="Year-over-year trend"
-            copy="Multi-year finding comparison with trend patterns and recurrence analysis."
+            copy="Multi-year finding trend with chart — flag anything recurring 3+ years."
           />
         </div>
       </section>
 
+      {/* Document library */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Document library</p>
@@ -96,29 +178,46 @@ export default function AuditPage() {
         <Link href="/dashboard/audit/library" className="block rounded-lg border border-dashed border-border bg-card p-6 text-center hover:border-primary/60 transition">
           <FolderOpen className="h-5 w-5 mx-auto mb-2 text-muted-foreground" />
           <p className="text-sm font-medium mb-1">Upload audit documents</p>
-          <p className="text-xs text-muted-foreground">GAO reports, IG findings, OMB A-123 workpapers, management responses, CAP tracking sheets.</p>
+          <p className="text-xs text-muted-foreground">
+            {hasDocuments
+              ? `${stats!.total_docs} document(s) in library · ${stats!.total_chunks} passages indexed`
+              : 'GAO reports, IG findings, OMB A-123 workpapers, management responses, CAP tracking sheets.'}
+          </p>
         </Link>
       </section>
     </div>
   )
 }
 
-function PulseCard({ icon: Icon, label, value, sub, tone }: { icon: any; label: string; value: string; sub: string; tone: 'destructive' | 'warning' | 'ok' | 'neutral' }) {
+function PulseCard({
+  icon: Icon, label, value, sub, tone, actionHref,
+}: {
+  icon: any; label: string; value: string; sub: string
+  tone: 'destructive' | 'warning' | 'ok' | 'neutral'
+  actionHref?: string
+}) {
   const toneClass =
     tone === 'destructive' ? 'text-destructive' :
     tone === 'warning' ? 'text-gold' :
-    tone === 'ok' ? 'text-green-600' :
-    'text-muted-foreground'
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    tone === 'ok' ? 'text-green-600' : 'text-muted-foreground'
+
+  const content = (
+    <div className={`rounded-lg border border-border bg-card p-4 h-full ${actionHref ? 'hover:border-primary/60 transition cursor-pointer' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] text-muted-foreground">{label}</span>
         <Icon className={`h-3.5 w-3.5 ${toneClass}`} />
       </div>
-      <div className="text-2xl font-medium tracking-tight mb-1">{value}</div>
+      <div className="text-2xl font-medium tracking-tight mb-1">
+        {value === '…' ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : value}
+      </div>
       <div className="text-[11px] text-muted-foreground leading-tight">{sub}</div>
+      {actionHref && (
+        <div className="mt-2 text-[10px] text-gold">Click to ask agent →</div>
+      )}
     </div>
   )
+
+  return actionHref ? <Link href={actionHref}>{content}</Link> : content
 }
 
 function QuickAction({ prompt, icon: Icon, title, copy }: { prompt: string; icon: any; title: string; copy: string }) {
