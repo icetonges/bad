@@ -136,6 +136,34 @@ ${skill ? skill.systemPrompt : ''}`
   const allToolCalls: Array<{ name: string; input: unknown; output: unknown }> = []
   const gatheredPassages: string[] = []
 
+  // ── SAVE-ONLY: user says "save as report" with no new analysis request ──
+  // Grab last assistant message from history and save it — no re-generation.
+  const isSaveOnly = /^\s*(please\s+)?(save|save (this|it|as|the analysis)|save as report|create report|generate report)\s*[.!]?\s*$/i.test(userMessage.trim())
+  if (isSaveOnly) {
+    const lastAssistant = [...previousMessages].reverse().find(m => m.role === 'assistant' && m.content && m.content.length > 100)
+    if (lastAssistant) {
+      onEvent?.({ type: 'status', message: 'Saving previous analysis…' })
+      const h1 = lastAssistant.content.match(/^#\s+(.+)$/m)?.[1]?.trim()
+      const h2 = lastAssistant.content.match(/^##\s+(.+)$/m)?.[1]?.trim()
+      const firstLine = lastAssistant.content.replace(/[#*`_]/g, '').split('\n').find(l => l.trim().length > 15)?.trim()
+      const title = (h1 || h2 || firstLine || 'Analysis').slice(0, 100)
+
+      const saved = await executeTool('generate_report', {
+        title,
+        category: ctx.category ?? 'budget',
+        content_markdown: lastAssistant.content,
+      }, { userId: ctx.userId, sessionId: ctx.sessionId, category: ctx.category })
+
+      const tc = { name: 'generate_report', input: { title }, output: saved }
+      onEvent?.({ type: 'tool_call', id: 'save_only', name: 'generate_report', input: { title } })
+      onEvent?.({ type: 'tool_result', id: 'save_only', name: 'generate_report', output: saved })
+
+      const reply = `✅ **Report saved:** "${title}"\n\nFind it in the Reports section — no content was re-generated.`
+      onEvent?.({ type: 'text', text: reply })
+      return { text: reply, toolCalls: [tc] }
+    }
+  }
+
   // ── Determine if this is a comprehensive analysis request ──────────
   const isExhaustive = /list all|complete list|all findings|all weakness|all material|comprehensive|exhaustive|every|enumerate|full list/i.test(userMessage)
   const isSimple = /how many|what files|list documents|what documents/i.test(userMessage)
