@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Loader2, Wrench, BarChart2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Send, Loader2, Wrench, BarChart2, CheckCircle2, AlertCircle, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/input'
 import ReactMarkdown from 'react-markdown'
@@ -348,6 +348,13 @@ export function ChatInterface({ category, initialPrompt }: { category?: string; 
                   <span>{m.error}</span>
                 </div>
               )}
+
+              {/* Save button — shown on completed assistant messages with content */}
+              {m.role === 'assistant' && m.content && m.content.length > 100 && !busy && (
+                <div className="mt-3 pt-2 border-t border-border flex items-center gap-2">
+                  <SaveButton content={m.content} category={category} />
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -369,6 +376,51 @@ export function ChatInterface({ category, initialPrompt }: { category?: string; 
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Save Report button ──────────────────────────────────────────────
+
+function SaveButton({ content, category }: { content: string; category?: string }) {
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  async function save() {
+    if (state !== 'idle') return
+    setState('saving')
+    try {
+      // Extract title from first heading in the content
+      const h1 = content.match(/^#\s+(.+)$/m)?.[1]?.trim()
+      const h2 = content.match(/^##\s+(.+)$/m)?.[1]?.trim()
+      const firstLine = content.replace(/[#*`_]/g, '').split('\n').find(l => l.trim().length > 15)?.trim()
+      const title = (h1 || h2 || firstLine || 'Analysis').slice(0, 100)
+
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, category: category ?? 'budget', content_markdown: content }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed')
+      setState('saved')
+      setTimeout(() => setState('idle'), 3000)
+    } catch {
+      setState('error')
+      setTimeout(() => setState('idle'), 3000)
+    }
+  }
+
+  return (
+    <button
+      onClick={save}
+      disabled={state !== 'idle'}
+      className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border transition ${
+        state === 'saved' ? 'border-green-600/40 text-green-600 bg-green-600/5' :
+        state === 'error' ? 'border-destructive/40 text-destructive bg-destructive/5' :
+        'border-border text-muted-foreground hover:text-gold hover:border-primary/60'
+      }`}
+    >
+      {state === 'saving' ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
+      {state === 'idle' ? 'Save as report' : state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved ✓' : 'Error — retry'}
+    </button>
   )
 }
 

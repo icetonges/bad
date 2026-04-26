@@ -136,9 +136,9 @@ ${skill ? skill.systemPrompt : ''}`
   const allToolCalls: Array<{ name: string; input: unknown; output: unknown }> = []
   const gatheredPassages: string[] = []
 
-  // ── SAVE-ONLY: user says "save as report" with no new analysis request ──
-  // Grab last assistant message from history and save it — no re-generation.
-  const isSaveOnly = /^\s*(please\s+)?(save|save (this|it|as|the analysis)|save as report|create report|generate report)\s*[.!]?\s*$/i.test(userMessage.trim())
+  // ── SAVE-ONLY: user just wants to save the previous analysis, no new work needed ──
+  const saveOnlyPattern = /^\s*(please\s+)?(save|save (this|it|that|the analysis|the response|the output|as report|as a report)|store (this|it|that)|export (this|it)|create (a )?report (from this|from that)?|generate (a )?report (from this|from that)?|save (and )?export)\s*[.!]?\s*$/i
+  const isSaveOnly = saveOnlyPattern.test(userMessage.trim())
   if (isSaveOnly) {
     const lastAssistant = [...previousMessages].reverse().find(m => m.role === 'assistant' && m.content && m.content.length > 100)
     if (lastAssistant) {
@@ -339,9 +339,9 @@ Use a DESCRIPTIVE title in generate_report — never the user's raw instruction 
     break
   }
 
-  // Auto-save report if user asked and synthesis produced real content
+  // Auto-save: only when user explicitly asks to save, not just mentions "report"
   const alreadySaved = allToolCalls.some(tc => tc.name === 'generate_report' && (tc.output as any)?.ok)
-  const wantsReport = /\b(save|report)\b/i.test(userMessage)
+  const wantsReport = /\b(save (this |it |the |as |the analysis |as a )?(report|analysis)|save report|generate report|create report|store (this|it)|export (this|it) as report)\b/i.test(userMessage)
 
   if (wantsReport && !alreadySaved && finalText.length > 100) {
     try {

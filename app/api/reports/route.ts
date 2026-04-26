@@ -35,6 +35,24 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ reports })
 }
 
+export async function POST(req: NextRequest) {
+  try {
+    const workspaceId = getWorkspaceId(req)
+    const body = await req.json()
+    const { title, category, content_markdown } = body
+    if (!title || !category || !content_markdown)
+      return NextResponse.json({ error: 'title, category, content_markdown required' }, { status: 400 })
+    const rows = await sql`
+      insert into public.reports (workspace_id, skill_id, category, title, content)
+      values (${workspaceId}::uuid, 'agent', ${category}, ${title}, ${content_markdown})
+      returning id, title, category, created_at
+    `
+    return NextResponse.json({ ok: true, report: rows[0] })
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     const workspaceId = getWorkspaceId(req)
