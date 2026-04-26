@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Home, MessageSquare, FileText,
+  Home, MessageSquare, FileText, Archive,
   BarChart3, FolderOpen, FileStack,
   ShieldCheck, ClipboardCheck,
   Coins, Receipt,
@@ -21,7 +21,8 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard',          icon: Home,         label: 'Overview' },
       { href: '/dashboard/chat',     icon: MessageSquare, label: 'Ask the agent' },
-      { href: '/dashboard/reports',  icon: FileText,     label: 'Reports' },
+      { href: '/dashboard/reports',    icon: FileText,     label: 'Reports' },
+      { href: '/dashboard/inquiries',  icon: Archive,      label: 'Inquiry archive' },
     ],
   },
   {
