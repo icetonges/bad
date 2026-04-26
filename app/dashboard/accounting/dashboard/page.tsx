@@ -1,343 +1,514 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Loader2, AlertCircle, RefreshCw, ArrowLeft, TrendingDown, Coins, BarChart3, FileText, Download } from 'lucide-react'
+import {
+  Loader2, AlertCircle, RefreshCw, Download, ChevronUp, ChevronDown,
+  Eye, EyeOff, FileText, ExternalLink, Filter, X, BarChart3,
+} from 'lucide-react'
 
 declare global { interface Window { Chart: any } }
 
-interface DashboardData {
-  summary: { fy: number; period: number; label: string; total_ba: number; total_obligations: number; total_outlays: number; obligation_rate: number }
-  multiYearChart: Array<{ year: string; budgetary_resources: number; obligations: number; outlays: number; obligation_rate: number }>
-  categoryChart:  Array<{ category: string; amount_b: number; transactions: number }>
-  componentChart: Array<{ agency: string; full_name: string; obligations_m: number; diff_m: number }>
-  tasChart:       Array<{ account: string; account_name: string; amount_b: number }>
-  topAwards:      Array<{ recipient: string; sub_agency: string; award_type: string; amount_m: number }>
-  pulled_at: string
+// ── Types ──────────────────────────────────────────────────────────
+
+interface Summary { fy: number; period: number; label: string; total_ba: number; total_obligations: number; total_outlays: number; obligation_rate: number; outlay_rate: number; ulo: number }
+interface MultiYear { year: string; fy: number; budgetary_resources_b: number; obligations_b: number; outlays_b: number; obligation_rate: number; outlay_rate: number }
+interface TasRow { code: string; name: string; fund_type: string; total_ba_b: number; obligations_b: number; outlays_b: number; obligation_rate: number; yoy_delta_b: number; yoy_pct: number }
+interface CategoryRow { category: string; amount_b: number; transactions: number }
+interface ComponentRow { agency: string; full_name: string; ba_b: number; gtas_obl_m: number; discrepancy_m: number }
+interface AwardRow { recipient: string; sub_agency: string; award_type: string; naics: string; amount_m: number }
+interface RawFile { filename: string; content: string; storage_url: string; pulled_at: string }
+
+interface DashData {
+  summary: Summary; multiYearChart: MultiYear[]
+  tasChart: TasRow[]; categoryChart: CategoryRow[]
+  componentChart: ComponentRow[]; topAwards: AwardRow[]
+  rawFile: RawFile | null; availableFiles: Array<{ filename: string; created_at: string; storage_url: string }>
+  pulled_at: string; requestedFY: number; availableFYs: number[]
 }
 
-const COLORS = ['#1E5AA8','#D4AF37','#D4883A','#C04B2D','#5B4BC4','#4C9C6F','#888780','#1D9E75','#E07B3A','#6B4BC4','#3B6D11','#A32D2D','#1E88C4','#C4881E','#884BC4']
+// ── Helpers ────────────────────────────────────────────────────────
 
-function fmtB(v: number | null) { return v != null ? `$${(v/1e9).toFixed(1)}B` : '—' }
-function fmtM(v: number | null) { return v != null ? `$${v.toLocaleString()}M` : '—' }
-function fmtPct(v: number | null) { return v != null ? `${(v*100).toFixed(1)}%` : '—' }
+const COLORS = ['#1E5AA8','#D4AF37','#D4883A','#C04B2D','#5B4BC4','#4C9C6F','#888780','#1D9E75','#E07B3A','#6B4BC4','#3B6D11','#A32D2D']
+const FUND_COLORS: Record<string, string> = { '1-Year': '#1E5AA8', '2-Year': '#D4883A', 'No-Year': '#5B4BC4', 'Multi-Year': '#4C9C6F', 'Working Capital': '#D4AF37', 'Other': '#888780' }
 
-function useChartJS(cb: () => (() => void) | void, deps: any[]) {
-  const loaded = useRef(false)
+const fmtB = (v: number | null) => v != null ? `$${v.toFixed(1)}B` : '—'
+const fmtM = (v: number | null) => v != null ? `$${Math.abs(v).toLocaleString()}M` : '—'
+const fmtPct = (v: number | null) => v != null ? `${v.toFixed(1)}%` : '—'
+const isDark = () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+
+function SortIcon({ col, sort }: { col: string; sort: { col: string; asc: boolean } }) {
+  if (sort.col !== col) return <span className="text-muted-foreground/30 ml-1">↕</span>
+  return sort.asc ? <ChevronUp className="h-3 w-3 inline ml-1" /> : <ChevronDown className="h-3 w-3 inline ml-1" />
+}
+
+// ── Chart hook ─────────────────────────────────────────────────────
+
+function useChart(id: string, config: any, deps: any[]) {
+  const ref = useRef<any>(null)
   useEffect(() => {
-    function init() { const cleanup = cb(); return cleanup }
-    if ((window as any).Chart) { loaded.current = true; return init() }
+    function build() {
+      const canvas = document.getElementById(id) as HTMLCanvasElement
+      if (!canvas || !(window as any).Chart) return
+      if (ref.current) { ref.current.destroy(); ref.current = null }
+      if (!config) return
+      ref.current = new (window as any).Chart(canvas, config)
+    }
+    if ((window as any).Chart) { build(); return }
     const s = document.createElement('script')
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js'
-    s.onload = () => { loaded.current = true; init() }
+    s.onload = build
     document.head.appendChild(s)
+    return () => { if (ref.current) { ref.current.destroy(); ref.current = null } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 }
 
-function ChartBox({ id, title, sub, children }: { id: string; title: string; sub?: string; children?: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3">
-        <p className="text-sm font-medium">{title}</p>
-        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-      </div>
-      {children}
-      <div style={{ height: 260, position: 'relative' }}>
-        <canvas id={id} />
-      </div>
-    </div>
-  )
-}
+// ── Main ───────────────────────────────────────────────────────────
 
 export default function ObligationDashboard() {
-  const [data, setData] = useState<DashboardData | null>(null)
+  const [data, setData] = useState<DashData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const chartRefs = useRef<Record<string, any>>({})
+  const [selectedFY, setSelectedFY] = useState<number | null>(null)
+  const [fundFilter, setFundFilter] = useState<string>('All')
+  const [componentFilter, setComponentFilter] = useState('')
+  const [tasSort, setTasSort] = useState({ col: 'obligations_b', asc: false })
+  const [awardSort, setAwardSort] = useState({ col: 'amount_m', asc: false })
+  const [visibleCols, setVisibleCols] = useState({ ba: true, obligations: true, outlays: true, rate: true, yoy: true })
+  const [showRaw, setShowRaw] = useState(false)
+  const [rawTab, setRawTab] = useState<'preview' | 'full'>('preview')
 
-  function destroyChart(id: string) {
-    if (chartRefs.current[id]) { chartRefs.current[id].destroy(); delete chartRefs.current[id] }
-  }
+  const dark = isDark()
+  const gc = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)'
+  const tc = dark ? '#9c9a92' : '#73726c'
+  const scalBase = { grid: { color: gc }, ticks: { color: tc, font: { size: 11 } } }
 
-  function makeChart(id: string, config: any) {
-    destroyChart(id)
-    const canvas = document.getElementById(id) as HTMLCanvasElement
-    if (!canvas || !(window as any).Chart) return
-    chartRefs.current[id] = new (window as any).Chart(canvas, config)
-  }
-
-  async function load() {
+  const load = useCallback(async (fy?: number) => {
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/obligation-dashboard')
+      const url = `/api/obligation-dashboard${fy ? `?fy=${fy}` : ''}`
+      const res = await fetch(url)
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'API error')
+      if (!res.ok) throw new Error(json.error)
       setData(json)
+      if (!selectedFY) setSelectedFY(json.requestedFY)
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
-  }
+  }, [selectedFY])
 
   useEffect(() => { load() }, [])
 
-  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-  const gridC = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)'
-  const tickC = isDark ? '#9c9a92' : '#73726c'
-  const scaleBase = { grid: { color: gridC }, ticks: { color: tickC, font: { size: 11 } } }
-
-  // Multi-year chart
-  useChartJS(() => {
-    if (!data?.multiYearChart.length) return
-    makeChart('c-multiyear', {
-      type: 'bar',
-      data: {
-        labels: data.multiYearChart.map(d => d.year),
-        datasets: [
-          { label: 'Budget Authority ($B)', data: data.multiYearChart.map(d => d.budgetary_resources), backgroundColor: '#1E5AA8' },
-          { label: 'Obligations ($B)', data: data.multiYearChart.map(d => d.obligations), backgroundColor: '#D4AF37' },
-          { label: 'Outlays ($B)', data: data.multiYearChart.map(d => d.outlays), backgroundColor: '#4C9C6F' },
-        ],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tickC, font: { size: 11 } } } }, scales: { x: scaleBase, y: { ...scaleBase, ticks: { ...scaleBase.ticks, callback: (v: number) => `$${v}B` } } } },
+  const sortTable = <T extends Record<string, any>>(rows: T[], s: { col: string; asc: boolean }) =>
+    [...rows].sort((a, b) => {
+      const av = a[s.col] ?? -Infinity; const bv = b[s.col] ?? -Infinity
+      return s.asc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1)
     })
-  }, [data])
 
-  // Obligation rate trend
-  useChartJS(() => {
-    if (!data?.multiYearChart.length) return
-    makeChart('c-rate', {
-      type: 'line',
-      data: {
-        labels: data.multiYearChart.map(d => d.year),
-        datasets: [{ label: 'Obligation Rate %', data: data.multiYearChart.map(d => d.obligation_rate), borderColor: '#D4883A', backgroundColor: 'rgba(212,136,58,0.1)', fill: true, tension: 0.3 }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: scaleBase, y: { ...scaleBase, min: 0, max: 100, ticks: { ...scaleBase.ticks, callback: (v: number) => `${v}%` } } } },
-    })
-  }, [data])
+  const fundTypes = data ? ['All', ...Array.from(new Set(data.tasChart.map(r => r.fund_type)))] : ['All']
+  const filteredTAS = data ? sortTable(
+    data.tasChart.filter(r => fundFilter === 'All' || r.fund_type === fundFilter),
+    tasSort
+  ) : []
+  const filteredComponents = data ? data.componentChart.filter(r =>
+    !componentFilter || r.full_name.toLowerCase().includes(componentFilter.toLowerCase())
+  ) : []
+  const sortedAwards = data ? sortTable(data.topAwards, awardSort) : []
 
-  // Award category pie
-  useChartJS(() => {
-    if (!data?.categoryChart.length) return
-    makeChart('c-category', {
-      type: 'doughnut',
-      data: {
-        labels: data.categoryChart.map(d => d.category),
-        datasets: [{ data: data.categoryChart.map(d => d.amount_b), backgroundColor: COLORS }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: tickC, font: { size: 10 }, boxWidth: 10 } } } },
-    })
-  }, [data])
+  // Charts
+  const multiYearConfig = data ? {
+    type: 'bar',
+    data: {
+      labels: data.multiYearChart.map(d => d.year),
+      datasets: [
+        { label: 'Budget Authority ($B)', data: data.multiYearChart.map(d => d.budgetary_resources_b), backgroundColor: '#1E5AA8' },
+        { label: 'Obligations ($B)', data: data.multiYearChart.map(d => d.obligations_b), backgroundColor: '#D4AF37' },
+        { label: 'Outlays ($B)', data: data.multiYearChart.map(d => d.outlays_b), backgroundColor: '#4C9C6F' },
+      ],
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tc, font: { size: 11 } } } }, scales: { x: scalBase, y: { ...scalBase, ticks: { ...scalBase.ticks, callback: (v: number) => `$${v}B` } } } },
+  } : null
 
-  // DoD component obligations
-  useChartJS(() => {
-    if (!data?.componentChart.length) return
-    const top = data.componentChart.slice(0, 12)
-    makeChart('c-component', {
-      type: 'bar',
-      data: {
-        labels: top.map(d => d.agency),
-        datasets: [{ label: 'Obligations ($M)', data: top.map(d => d.obligations_m), backgroundColor: COLORS }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ...scaleBase, ticks: { ...scaleBase.ticks, callback: (v: number) => `$${v}M` } }, y: { grid: { display: false }, ticks: { color: tickC, font: { size: 10 } } } } },
-    })
-  }, [data])
+  const rateConfig = data ? {
+    type: 'line',
+    data: {
+      labels: data.multiYearChart.map(d => d.year),
+      datasets: [
+        { label: 'Obligation rate %', data: data.multiYearChart.map(d => d.obligation_rate), borderColor: '#D4883A', backgroundColor: 'rgba(212,136,58,0.1)', fill: true, tension: 0.3 },
+        { label: 'Outlay rate %', data: data.multiYearChart.map(d => d.outlay_rate), borderColor: '#4C9C6F', backgroundColor: 'rgba(76,156,111,0.1)', fill: true, tension: 0.3 },
+      ],
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tc, font: { size: 11 } } } }, scales: { x: scalBase, y: { ...scalBase, min: 0, max: 110, ticks: { ...scalBase.ticks, callback: (v: number) => `${v}%` } } } },
+  } : null
 
-  // TAS federal accounts
-  useChartJS(() => {
-    if (!data?.tasChart.length) return
-    const top = data.tasChart.slice(0, 12)
-    makeChart('c-tas', {
-      type: 'bar',
-      data: {
-        labels: top.map(d => d.account.length > 20 ? d.account.slice(0, 20) + '…' : d.account),
-        datasets: [{ label: 'Obligations ($B)', data: top.map(d => d.amount_b), backgroundColor: '#5B4BC4' }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ...scaleBase, ticks: { ...scaleBase.ticks, callback: (v: number) => `$${v}B` } }, y: { grid: { display: false }, ticks: { color: tickC, font: { size: 10 } } } } },
-    })
-  }, [data])
+  const categoryConfig = data ? {
+    type: 'doughnut',
+    data: {
+      labels: data.categoryChart.map(d => d.category),
+      datasets: [{ data: data.categoryChart.map(d => d.amount_b), backgroundColor: COLORS }],
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' as const, labels: { color: tc, font: { size: 10 }, boxWidth: 10 } } } },
+  } : null
 
-  // Top contractors
-  useChartJS(() => {
-    if (!data?.topAwards.length) return
-    const top = data.topAwards.slice(0, 12)
-    makeChart('c-contractors', {
-      type: 'bar',
-      data: {
-        labels: top.map(d => d.recipient.length > 25 ? d.recipient.slice(0, 25) + '…' : d.recipient),
-        datasets: [{ label: 'Award ($M)', data: top.map(d => d.amount_m), backgroundColor: '#C04B2D' }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ...scaleBase, ticks: { ...scaleBase.ticks, callback: (v: number) => `$${v}M` } }, y: { grid: { display: false }, ticks: { color: tickC, font: { size: 10 } } } } },
-    })
-  }, [data])
+  const fundTypeConfig = data ? {
+    type: 'bar',
+    data: {
+      labels: filteredTAS.slice(0, 12).map(r => r.code.length > 18 ? r.code.slice(0, 18) + '…' : r.code),
+      datasets: [
+        { label: 'Budget Authority ($B)', data: filteredTAS.slice(0, 12).map(r => r.total_ba_b), backgroundColor: filteredTAS.slice(0, 12).map(r => FUND_COLORS[r.fund_type] + '80') },
+        { label: 'Obligations ($B)', data: filteredTAS.slice(0, 12).map(r => r.obligations_b), backgroundColor: filteredTAS.slice(0, 12).map(r => FUND_COLORS[r.fund_type]) },
+      ],
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y' as const, plugins: { legend: { labels: { color: tc, font: { size: 11 } } } }, scales: { x: { ...scalBase, stacked: false, ticks: { ...scalBase.ticks, callback: (v: number) => `$${v}B` } }, y: { grid: { display: false }, ticks: { color: tc, font: { size: 9 } } } } },
+  } : null
+
+  useChart('c-multiyear', multiYearConfig, [data, dark])
+  useChart('c-rate', rateConfig, [data, dark])
+  useChart('c-category', categoryConfig, [data, dark])
+  useChart('c-tas', fundTypeConfig, [filteredTAS, dark])
 
   function exportCSV() {
     if (!data) return
     const rows = [
-      ['Section', 'Label', 'Value'],
-      ...data.multiYearChart.map(d => ['Multi-Year', d.year, `BA $${d.budgetary_resources}B Obligations $${d.obligations}B Outlays $${d.outlays}B Rate ${d.obligation_rate}%`]),
-      ...data.categoryChart.map(d => ['Award Category', d.category, `$${d.amount_b}B (${d.transactions} transactions)`]),
-      ...data.componentChart.map(d => ['DoD Component', d.full_name, `$${d.obligations_m}M`]),
-      ...data.tasChart.map(d => ['Federal Account (TAS)', d.account, `$${d.amount_b}B`]),
-      ...data.topAwards.map(d => ['Top Contractor', d.recipient, `$${d.amount_m}M (${d.sub_agency})`]),
+      ['Type', 'Label', 'Metric', 'Value', 'FY'],
+      ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Budget Authority $B', String(d.budgetary_resources_b), String(d.fy)]),
+      ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Obligations $B', String(d.obligations_b), String(d.fy)]),
+      ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Outlays $B', String(d.outlays_b), String(d.fy)]),
+      ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Obligation Rate %', String(d.obligation_rate), String(d.fy)]),
+      ...data.tasChart.map(r => ['TAS', r.code, 'Obligations $B', String(r.obligations_b), String(data.requestedFY)]),
+      ...data.tasChart.map(r => ['TAS', r.code, 'Fund Type', r.fund_type, String(data.requestedFY)]),
+      ...data.categoryChart.map(c => ['Category', c.category, 'Obligations $B', String(c.amount_b), String(data.requestedFY)]),
+      ...data.topAwards.map(a => ['Award', a.recipient, 'Amount $M', String(a.amount_m), String(data.requestedFY)]),
     ]
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `dod_obligations_${data.summary.label}.csv`; a.click()
-    URL.revokeObjectURL(url)
+    const csv = rows.map(r => r.map((c: string) => `"${c}"`).join(',')).join('\n')
+    dl(`dod-obligations-FY${data.requestedFY}.csv`, csv, 'text/csv')
   }
 
-  if (loading) return <div className="p-8 flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading live USASpending data…</div>
-  if (error) return (
-    <div className="p-8">
-      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 flex items-start gap-3 max-w-xl">
-        <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />
-        <div>
-          <p className="text-sm font-medium mb-1">Could not load obligation data</p>
-          <p className="text-xs text-muted-foreground mb-3">{error}</p>
-          <button onClick={load} className="text-xs text-gold hover:text-primary transition">Retry →</button>
-        </div>
-      </div>
-    </div>
-  )
+  function dl(name: string, content: string, type: string) {
+    const b = new Blob([content], { type })
+    const url = URL.createObjectURL(b)
+    const a = document.createElement('a')
+    a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url)
+  }
+
+  if (loading) return <div className="p-8 flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading USASpending data…</div>
+  if (error) return <div className="p-8"><div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 max-w-xl"><div className="flex items-start gap-2"><AlertCircle className="h-4 w-4 text-destructive mt-0.5" /><div><p className="text-sm font-medium mb-1">Could not load data</p><p className="text-xs text-muted-foreground mb-2">{error}</p><button onClick={() => load()} className="text-xs text-gold">Retry →</button></div></div></div></div>
   if (!data) return null
 
   const { summary } = data
+
   return (
-    <div className="p-6 max-w-7xl w-full">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+    <div className="p-5 max-w-7xl w-full">
+      {/* ── Header ──────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
         <div>
-          <Link href="/dashboard/accounting" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 mb-2">
-            <ArrowLeft className="h-3 w-3" /> Accounting & Execution
-          </Link>
           <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-gold mb-1">Live · {summary.label}</p>
-          <h1 className="text-2xl font-medium tracking-tight">DoD Obligation Dashboard</h1>
-          <p className="text-xs text-muted-foreground mt-1">Source: USASpending.gov · Pulled {new Date(data.pulled_at).toLocaleDateString()}</p>
+          <h1 className="text-xl font-medium tracking-tight">DoD Obligation Dashboard</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">USASpending.gov · {new Date(data.pulled_at).toLocaleString()}</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={load} className="flex items-center gap-1.5 text-xs border border-border rounded px-3 py-1.5 text-muted-foreground hover:text-foreground transition">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* FY Selector */}
+          <select
+            value={selectedFY ?? data.requestedFY}
+            onChange={e => { const fy = Number(e.target.value); setSelectedFY(fy); load(fy) }}
+            className="text-xs border border-border rounded px-2 py-1.5 bg-background text-foreground"
+          >
+            {data.availableFYs.map(y => <option key={y} value={y}>FY{y}</option>)}
+          </select>
+          <button onClick={() => load(selectedFY ?? undefined)} className="flex items-center gap-1 text-xs border border-border rounded px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition">
             <RefreshCw className="h-3 w-3" /> Refresh
           </button>
-          <button onClick={exportCSV} className="flex items-center gap-1.5 text-xs border border-border rounded px-3 py-1.5 text-muted-foreground hover:text-gold transition">
-            <Download className="h-3 w-3" /> Export CSV
+          <button onClick={exportCSV} className="flex items-center gap-1 text-xs border border-border rounded px-2.5 py-1.5 text-muted-foreground hover:text-gold transition">
+            <Download className="h-3 w-3" /> CSV
           </button>
-          <Link href={`/dashboard/chat?category=accounting&prompt=${encodeURIComponent('Analyze the latest DoD obligation data from USASpending.gov. Cover: total BA vs obligations vs outlays, obligation rate vs historical, top funding categories, which DoD components are leading, top contractors, and any execution risks.')}`}
-            className="flex items-center gap-1.5 text-xs border border-primary/60 text-gold rounded px-3 py-1.5 hover:bg-accent transition">
+          <Link href={`/dashboard/chat?category=accounting&prompt=${encodeURIComponent(`Provide a comprehensive obligation analysis for FY${data.requestedFY} DoD spending: obligation rate, top funding categories, largest TAS accounts, top contractors, ULO concerns, and execution risks.`)}`}
+            className="text-xs border border-primary/60 text-gold rounded px-2.5 py-1.5 hover:bg-accent transition">
             Ask agent →
           </Link>
         </div>
       </div>
 
-      {/* Summary metric cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <Metric label="Total budget authority" value={fmtB(summary.total_ba)} icon={Coins} />
-        <Metric label="Total obligations" value={fmtB(summary.total_obligations)} icon={TrendingDown} />
-        <Metric label="Total outlays" value={fmtB(summary.total_outlays)} icon={BarChart3} />
-        <Metric label="Obligation rate" value={fmtPct(summary.obligation_rate)} icon={FileText} tone={summary.obligation_rate < 0.6 ? 'warn' : 'ok'} />
+      {/* ── Summary metrics ─────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-5">
+        <Metric label="Budget Authority" value={fmtB(summary.total_ba ? summary.total_ba / 1e9 : null)} />
+        <Metric label="Obligations" value={fmtB(summary.total_obligations ? summary.total_obligations / 1e9 : null)} />
+        <Metric label="Outlays" value={fmtB(summary.total_outlays ? summary.total_outlays / 1e9 : null)} />
+        <Metric label="Obligation Rate" value={fmtPct(summary.obligation_rate ? summary.obligation_rate * 100 : null)}
+          tone={summary.obligation_rate ? (summary.obligation_rate < 0.55 ? 'warn' : 'ok') : undefined} />
+        <Metric label="ULO (Obl − Outlays)" value={fmtB(summary.ulo ? summary.ulo / 1e9 : null)} />
       </div>
 
-      {/* Interpretation banner */}
-      <div className="rounded-lg border border-border bg-card p-4 mb-6 text-sm">
-        <p className="font-medium mb-1">Execution reading — {summary.label}</p>
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          {summary.obligation_rate != null && summary.obligation_rate < 0.5
-            ? `⚠️ Obligation rate of ${fmtPct(summary.obligation_rate)} is below 50% at period ${summary.period} — back-loading risk. Expect Q4 spike and potential carryover. Review ADA exposure on near-expiring accounts.`
-            : summary.obligation_rate != null && summary.obligation_rate >= 0.8
-            ? `✓ Obligation rate of ${fmtPct(summary.obligation_rate)} is on track for end-of-year execution. Monitor outlays lag — ${fmtB(summary.total_obligations ? summary.total_obligations - (summary.total_outlays ?? 0) : null)} in ULO (obligated not yet outlayed).`
-            : `Obligation rate: ${fmtPct(summary.obligation_rate)} at period ${summary.period} of 12. ULO gap: ${fmtB(summary.total_obligations && summary.total_outlays ? summary.total_obligations - summary.total_outlays : null)}.`
-          }
-        </p>
-      </div>
-
-      {/* Charts grid */}
-      <div className="grid md:grid-cols-2 gap-4 mb-4">
-        <ChartBox id="c-multiyear" title="Multi-year BA / Obligations / Outlays ($B)" sub="Budget Authority vs actual obligations vs cash outlays — 4 fiscal years" />
-        <ChartBox id="c-rate" title="Obligation rate trend (%)" sub="Obligations as % of total budget authority by fiscal year" />
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4 mb-4">
-        <ChartBox id="c-category" title="Obligations by award type" sub={`FY${summary.fy} — contracts, grants, direct payments, IDVs`} />
-        <ChartBox id="c-component" title="Top DoD components by obligations ($M)" sub="From GTAS reporting submissions — agency-level" />
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4 mb-6">
-        <ChartBox id="c-tas" title="Obligations by federal account (TAS) ($B)" sub="Top 12 Treasury Appropriation Fund Symbols by dollar obligation" />
-        <ChartBox id="c-contractors" title="Top DoD contractors by award amount ($M)" sub={`FY${summary.fy} — contracts A/B/C/D only, sorted by total obligation`} />
-      </div>
-
-      {/* TAS detail table */}
-      {data.tasChart.length > 0 && (
-        <div className="rounded-lg border border-border bg-card p-4 mb-4">
-          <p className="text-sm font-medium mb-3">Federal account (TAS) detail</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="text-left pb-2 pr-4">Account code (TAS)</th>
-                  <th className="text-left pb-2 pr-4">Account name</th>
-                  <th className="text-right pb-2">Obligations ($B)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.tasChart.map((row, i) => (
-                  <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
-                    <td className="py-1.5 pr-4 font-mono text-[11px]">{row.account}</td>
-                    <td className="py-1.5 pr-4 text-muted-foreground">{row.account_name}</td>
-                    <td className="py-1.5 text-right font-medium">{fmtB(row.amount_b * 1e9)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* Execution reading */}
+      {summary.obligation_rate != null && (
+        <div className={`rounded-lg border p-3 mb-5 text-xs ${summary.obligation_rate < 0.55 ? 'border-gold/40 bg-gold/5' : 'border-green-600/40 bg-green-600/5'}`}>
+          <span className="font-medium mr-2">{summary.obligation_rate < 0.55 ? '⚠ Execution risk' : '✓ On track'}</span>
+          {summary.obligation_rate < 0.55
+            ? `Obligation rate of ${fmtPct(summary.obligation_rate * 100)} at P${summary.period} indicates significant back-loading risk. Expect Q4 spike. Monitor ADA exposure on expiring 1-year funds.`
+            : `Obligation rate of ${fmtPct(summary.obligation_rate * 100)} at P${summary.period} is on pace. ULO of ${fmtB(summary.ulo ? summary.ulo / 1e9 : null)} represents cash outlays not yet disbursed — normal for multi-year contracts.`}
         </div>
       )}
 
-      {/* Top contractors table */}
-      {data.topAwards.length > 0 && (
+      {/* ── Charts row 1 ────────────────────────────────────────── */}
+      <div className="grid md:grid-cols-2 gap-4 mb-4">
         <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-sm font-medium mb-3">Top contractor awards</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="text-left pb-2 pr-4">Recipient</th>
-                  <th className="text-left pb-2 pr-4">Sub-agency</th>
-                  <th className="text-left pb-2 pr-4">Type</th>
-                  <th className="text-right pb-2">Amount ($M)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.topAwards.map((row, i) => (
-                  <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
-                    <td className="py-1.5 pr-4 font-medium">{row.recipient}</td>
-                    <td className="py-1.5 pr-4 text-muted-foreground">{row.sub_agency}</td>
-                    <td className="py-1.5 pr-4 text-muted-foreground">{row.award_type}</td>
-                    <td className="py-1.5 text-right font-medium">{fmtM(row.amount_m)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <p className="text-sm font-medium mb-0.5">Multi-year BA / Obligations / Outlays ($B)</p>
+          <p className="text-[11px] text-muted-foreground mb-3">4 fiscal years — budget authority vs obligated vs outlayed</p>
+          <div style={{ height: 220 }}><canvas id="c-multiyear" /></div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-sm font-medium mb-0.5">Obligation & outlay rate trend (%)</p>
+          <p className="text-[11px] text-muted-foreground mb-3">Obl/BA and Outlay/BA by fiscal year</p>
+          <div style={{ height: 220 }}><canvas id="c-rate" /></div>
+        </div>
+      </div>
+
+      {/* ── Charts row 2 ────────────────────────────────────────── */}
+      <div className="grid md:grid-cols-2 gap-4 mb-5">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-sm font-medium mb-0.5">Obligations by award type</p>
+          <p className="text-[11px] text-muted-foreground mb-3">Contracts vs grants vs direct payments vs IDVs</p>
+          <div style={{ height: 220 }}><canvas id="c-category" /></div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-sm font-medium">TAS obligations by fund type</p>
+            {/* Fund type filter */}
+            <div className="flex gap-1 flex-wrap">
+              {fundTypes.map(ft => (
+                <button key={ft} onClick={() => setFundFilter(ft)}
+                  className={`text-[10px] px-1.5 py-0.5 rounded transition border ${fundFilter === ft ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+                  {ft}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-2">1-Year / 2-Year / No-Year / WCF by TAS account</p>
+          <div style={{ height: 220 }}><canvas id="c-tas" /></div>
+        </div>
+      </div>
+
+      {/* ── TAS detail table ────────────────────────────────────── */}
+      <div className="rounded-lg border border-border bg-card mb-4">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-wrap gap-2">
+          <div>
+            <p className="text-sm font-medium">Federal accounts (TAS) detail — FY{data.requestedFY}</p>
+            <p className="text-[11px] text-muted-foreground">{filteredTAS.length} accounts · click headers to sort · filter by fund type above</p>
+          </div>
+          {/* Column visibility toggles */}
+          <div className="flex gap-1 flex-wrap">
+            {(['ba', 'obligations', 'outlays', 'rate', 'yoy'] as const).map(col => (
+              <button key={col} onClick={() => setVisibleCols(v => ({ ...v, [col]: !v[col] }))}
+                className={`text-[10px] px-2 py-0.5 rounded border transition flex items-center gap-1 ${visibleCols[col] ? 'border-border text-foreground' : 'border-border text-muted-foreground/40'}`}>
+                {visibleCols[col] ? <Eye className="h-2.5 w-2.5" /> : <EyeOff className="h-2.5 w-2.5" />}
+                {col === 'ba' ? 'BA' : col === 'obligations' ? 'Obl' : col === 'outlays' ? 'Outlays' : col === 'rate' ? 'Rate' : 'YoY'}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <Th label="TAS Code" col="code" sort={tasSort} onSort={s => setTasSort(s)} />
+                <Th label="Account Name" col="name" sort={tasSort} onSort={s => setTasSort(s)} />
+                <Th label="Fund Type" col="fund_type" sort={tasSort} onSort={s => setTasSort(s)} />
+                {visibleCols.ba         && <Th label="BA ($B)" col="total_ba_b" sort={tasSort} onSort={s => setTasSort(s)} right />}
+                {visibleCols.obligations && <Th label="Obl ($B)" col="obligations_b" sort={tasSort} onSort={s => setTasSort(s)} right />}
+                {visibleCols.outlays     && <Th label="Outlays ($B)" col="outlays_b" sort={tasSort} onSort={s => setTasSort(s)} right />}
+                {visibleCols.rate        && <Th label="Rate %" col="obligation_rate" sort={tasSort} onSort={s => setTasSort(s)} right />}
+                {visibleCols.yoy         && <Th label="YoY Δ" col="yoy_delta_b" sort={tasSort} onSort={s => setTasSort(s)} right />}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTAS.map((r, i) => (
+                <tr key={i} className="border-b border-border/50 hover:bg-muted/20">
+                  <td className="py-1.5 px-3 font-mono text-[11px]">{r.code}</td>
+                  <td className="py-1.5 px-3 text-muted-foreground max-w-[220px] truncate" title={r.name}>{r.name}</td>
+                  <td className="py-1.5 px-3">
+                    <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: (FUND_COLORS[r.fund_type] ?? '#888') + '20', color: FUND_COLORS[r.fund_type] ?? '#888' }}>
+                      {r.fund_type}
+                    </span>
+                  </td>
+                  {visibleCols.ba          && <td className="py-1.5 px-3 text-right">{r.total_ba_b > 0 ? fmtB(r.total_ba_b) : '—'}</td>}
+                  {visibleCols.obligations  && <td className="py-1.5 px-3 text-right font-medium">{r.obligations_b > 0 ? fmtB(r.obligations_b) : '—'}</td>}
+                  {visibleCols.outlays      && <td className="py-1.5 px-3 text-right">{r.outlays_b > 0 ? fmtB(r.outlays_b) : '—'}</td>}
+                  {visibleCols.rate         && <td className="py-1.5 px-3 text-right">
+                    {r.obligation_rate != null ? (
+                      <span className={r.obligation_rate < 40 ? 'text-gold' : r.obligation_rate > 90 ? 'text-green-600' : ''}>
+                        {fmtPct(r.obligation_rate)}
+                      </span>
+                    ) : '—'}
+                  </td>}
+                  {visibleCols.yoy          && <td className={`py-1.5 px-3 text-right ${r.yoy_delta_b > 0 ? 'text-green-600' : r.yoy_delta_b < 0 ? 'text-destructive' : ''}`}>
+                    {r.yoy_delta_b != null ? `${r.yoy_delta_b > 0 ? '+' : ''}${fmtB(r.yoy_delta_b)}` : '—'}
+                  </td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      <p className="text-[10px] text-muted-foreground mt-4">
-        Data: USASpending.gov API · No authentication required · Auto-refreshed weekly via GitHub Actions · All figures in nominal dollars
+      {/* ── DoD Component table ──────────────────────────────────── */}
+      <div className="rounded-lg border border-border bg-card mb-4">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-wrap gap-2">
+          <p className="text-sm font-medium">DoD component breakdown</p>
+          <div className="flex items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            <input value={componentFilter} onChange={e => setComponentFilter(e.target.value)}
+              placeholder="Filter by agency name…"
+              className="text-xs border border-border rounded px-2 py-1 bg-background w-48" />
+            {componentFilter && <button onClick={() => setComponentFilter('')}><X className="h-3 w-3 text-muted-foreground" /></button>}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="text-left py-2 px-3 font-medium text-muted-foreground">Component</th>
+                <th className="text-right py-2 px-3 font-medium text-muted-foreground">Budget Authority ($B)</th>
+                <th className="text-right py-2 px-3 font-medium text-muted-foreground">GTAS Obligations ($M)</th>
+                <th className="text-right py-2 px-3 font-medium text-muted-foreground">Discrepancy ($M)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredComponents.map((r, i) => (
+                <tr key={i} className="border-b border-border/50 hover:bg-muted/20">
+                  <td className="py-1.5 px-3">
+                    <div className="font-medium">{r.agency}</div>
+                    <div className="text-[10px] text-muted-foreground truncate max-w-[200px]" title={r.full_name}>{r.full_name}</div>
+                  </td>
+                  <td className="py-1.5 px-3 text-right">{fmtB(r.ba_b)}</td>
+                  <td className="py-1.5 px-3 text-right">{fmtM(r.gtas_obl_m)}</td>
+                  <td className={`py-1.5 px-3 text-right ${Math.abs(r.discrepancy_m) > 1000 ? 'text-gold' : ''}`}>
+                    {r.discrepancy_m !== 0 ? `${r.discrepancy_m > 0 ? '+' : ''}${fmtM(r.discrepancy_m)}` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Top contractors table ────────────────────────────────── */}
+      <div className="rounded-lg border border-border bg-card mb-4">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <p className="text-sm font-medium">Top DoD contractors — FY{data.requestedFY}</p>
+          <p className="text-[11px] text-muted-foreground">{sortedAwards.length} awards · click headers to sort</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <Th label="Recipient" col="recipient" sort={awardSort} onSort={s => setAwardSort(s)} />
+                <Th label="Sub-Agency" col="sub_agency" sort={awardSort} onSort={s => setAwardSort(s)} />
+                <Th label="Type" col="award_type" sort={awardSort} onSort={s => setAwardSort(s)} />
+                <Th label="Award ($M)" col="amount_m" sort={awardSort} onSort={s => setAwardSort(s)} right />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedAwards.map((r, i) => (
+                <tr key={i} className="border-b border-border/50 hover:bg-muted/20">
+                  <td className="py-1.5 px-3 font-medium">{r.recipient}</td>
+                  <td className="py-1.5 px-3 text-muted-foreground">{r.sub_agency}</td>
+                  <td className="py-1.5 px-3 text-muted-foreground">{r.award_type}</td>
+                  <td className="py-1.5 px-3 text-right font-medium">{fmtM(r.amount_m)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Raw ingested file ────────────────────────────────────── */}
+      <div className="rounded-lg border border-border bg-card">
+        <button
+          onClick={() => setShowRaw(r => !r)}
+          className="w-full flex items-center justify-between px-4 py-3 border-b border-border hover:bg-muted/20 transition"
+        >
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-gold" />
+            <div className="text-left">
+              <p className="text-sm font-medium">Raw ingested data file</p>
+              <p className="text-[11px] text-muted-foreground">{data.rawFile?.filename ?? 'No file ingested yet'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {data.rawFile?.storage_url?.startsWith('https://') && (
+              <a href={data.rawFile.storage_url} target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="flex items-center gap-1 text-xs text-gold border border-border rounded px-2 py-1 hover:bg-accent transition">
+                <ExternalLink className="h-3 w-3" /> Download
+              </a>
+            )}
+            {data.rawFile?.content && (
+              <button onClick={e => { e.stopPropagation(); dl(data.rawFile!.filename, data.rawFile!.content, 'text/plain') }}
+                className="flex items-center gap-1 text-xs border border-border rounded px-2 py-1 text-muted-foreground hover:text-gold transition">
+                <Download className="h-3 w-3" /> Save
+              </button>
+            )}
+            <BarChart3 className={`h-4 w-4 text-muted-foreground transition-transform ${showRaw ? 'rotate-90' : ''}`} />
+          </div>
+        </button>
+
+        {showRaw && data.rawFile && (
+          <div className="p-4">
+            {/* Available files list */}
+            {data.availableFiles.length > 1 && (
+              <div className="mb-3 flex gap-2 flex-wrap">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider self-center">History:</span>
+                {data.availableFiles.map((f, i) => (
+                  <span key={i} className="text-[11px] px-2 py-0.5 rounded border border-border bg-muted text-muted-foreground">
+                    {f.filename.replace('usaspending_dod_obligations_', '').replace('.txt', '')}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Tabs */}
+            <div className="flex gap-1 mb-3 border-b border-border">
+              {(['preview', 'full'] as const).map(t => (
+                <button key={t} onClick={() => setRawTab(t)}
+                  className={`text-xs px-3 py-1.5 border-b-2 transition ${rawTab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+                  {t === 'preview' ? 'Preview (2000 chars)' : 'Full text'}
+                </button>
+              ))}
+            </div>
+
+            <pre className="text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap overflow-auto max-h-96 font-mono bg-muted/30 rounded p-3">
+              {rawTab === 'preview'
+                ? data.rawFile.content.slice(0, 2000) + (data.rawFile.content.length > 2000 ? '\n\n…[truncated]' : '')
+                : data.rawFile.content}
+            </pre>
+          </div>
+        )}
+      </div>
+
+      <p className="text-[10px] text-muted-foreground mt-3">
+        Source: USASpending.gov · DoD toptier code 097 · Data has ~90-day reporting lag per DATA Act requirements · All figures nominal dollars
       </p>
     </div>
   )
 }
 
-function Metric({ label, value, icon: Icon, tone }: { label: string; value: string; icon: any; tone?: 'ok' | 'warn' }) {
+// ── Sub-components ─────────────────────────────────────────────────
+
+function Metric({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'warn' }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] text-muted-foreground">{label}</span>
-        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      </div>
-      <div className={`text-2xl font-medium tracking-tight ${tone === 'warn' ? 'text-gold' : tone === 'ok' ? 'text-green-600' : ''}`}>{value}</div>
+    <div className="rounded-lg border border-border bg-card p-3">
+      <p className="text-[10px] text-muted-foreground mb-1">{label}</p>
+      <p className={`text-xl font-medium tracking-tight ${tone === 'ok' ? 'text-green-600' : tone === 'warn' ? 'text-gold' : ''}`}>{value}</p>
     </div>
+  )
+}
+
+function Th({ label, col, sort, onSort, right }: { label: string; col: string; sort: { col: string; asc: boolean }; onSort: (s: { col: string; asc: boolean }) => void; right?: boolean }) {
+  return (
+    <th
+      onClick={() => onSort({ col, asc: sort.col === col ? !sort.asc : false })}
+      className={`py-2 px-3 font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground transition ${right ? 'text-right' : 'text-left'}`}
+    >
+      {label}<SortIcon col={col} sort={sort} />
+    </th>
   )
 }
