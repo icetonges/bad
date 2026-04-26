@@ -2,285 +2,267 @@
 /**
  * fetch-dod-obligations.mjs
  *
- * Pulls DoD obligation data from USASpending.gov API and ingests it
- * into the FedFMMatter knowledge base via /api/ingest.
+ * Pulls DoD obligation data from USASpending.gov and ingests into FedFMMatter.
  *
- * Called by GitHub Action on a weekly schedule.
+ * Fixes:
+ *  - fiscal_period valid range is 2-12 (period 1/October is never valid)
+ *  - USASpending data lags ~6-8 weeks — we always subtract 2 periods
+ *  - Uses reliable endpoints: /agency/097/ series + /search/spending_by_award/
+ *  - Fallback to prior period if current not yet published
  *
- * Environment variables:
- *   INGEST_URL      — e.g. https://fedfm.vercel.app/api/ingest
- *   INGEST_SECRET   — must match INGEST_SECRET in Vercel env
- *
- * USASpending API docs: https://api.usaspending.gov
+ * Env: INGEST_URL, INGEST_SECRET
  */
-
-import { readFileSync } from 'fs'
 
 const INGEST_URL = process.env.INGEST_URL
 const INGEST_SECRET = process.env.INGEST_SECRET
 
 if (!INGEST_URL || !INGEST_SECRET) {
-  console.error('❌ INGEST_URL and INGEST_SECRET must be set')
+  console.error('❌ INGEST_URL and INGEST_SECRET env vars required')
   process.exit(1)
 }
 
+const BASE = 'https://api.usaspending.gov/api/v2'
+const DOD_CODE = '097' // DoD toptier agency code
+
 // ── Fiscal period helpers ──────────────────────────────────────────
 
-function getCurrentFiscalYear() {
+function getFiscalPeriodWithLag(lagPeriods = 2) {
   const now = new Date()
-  return now.getMonth() >= 9 ? now.getFullYear() + 1 : now.getFullYear()
-}
-
-function getCurrentFiscalPeriod() {
-  const now = new Date()
-  // Federal fiscal year starts Oct 1. Period = month within FY (1-12)
   const month = now.getMonth() + 1 // 1-12
-  const fy = getCurrentFiscalYear()
-  const fyMonth = month >= 10 ? month - 9 : month + 3
-  return { fy, period: fyMonth }
+  const calYear = now.getFullYear()
+
+  // Convert calendar month to FY period
+  // Oct=P1, Nov=P2, Dec=P3, Jan=P4, Feb=P5, Mar=P6, Apr=P7, May=P8, Jun=P9, Jul=P10, Aug=P11, Sep=P12
+  let fyPeriod = month >= 10 ? month - 9 : month + 3
+  let fy = month >= 10 ? calYear + 1 : calYear
+
+  // Apply lag — subtract periods, wrapping back into prior FY if needed
+  fyPeriod -= lagPeriods
+  if (fyPeriod < 2) {
+    // Period 1 is invalid (Oct data isn't published until Dec at earliest)
+    // Wrap to prior FY
+    fyPeriod += 12
+    fy -= 1
+    if (fyPeriod < 2) fyPeriod = 2
+  }
+
+  // Clamp to valid range 2-12
+  fyPeriod = Math.max(2, Math.min(12, fyPeriod))
+
+  return { fy, period: fyPeriod }
 }
 
-// ── USASpending API calls ──────────────────────────────────────────
+function periodLabel(fy, period) {
+  const months = ['', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
+  const year = period <= 3 ? fy - 1 : fy
+  return `${months[period]} ${year} (FY${fy} P${String(period).padStart(2,'0')})`
+}
 
-const USASPENDING_BASE = 'https://api.usaspending.gov/api/v2'
-const DOD_AGENCY_ID = '097' // DoD Treasury account identifier
+// ── API helpers ────────────────────────────────────────────────────
 
-/**
- * Fetch DoD agency-level obligation totals by fiscal period
- */
-async function fetchDoDObligationsByPeriod(fy, period) {
-  const url = `${USASPENDING_BASE}/reporting/agencies/overview/?fiscal_year=${fy}&fiscal_period=${period}&limit=50`
-  console.log(`  Fetching agency overview FY${fy} P${period}...`)
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`USASpending agency overview failed: ${res.status}`)
+async function apiGet(path) {
+  const url = `${BASE}${path}`
+  const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`GET ${path} → ${res.status}: ${body.slice(0, 200)}`)
+  }
   return res.json()
 }
 
-/**
- * Fetch DoD spending by budget function
- */
-async function fetchDoDByBudgetFunction(fy) {
-  const url = `${USASPENDING_BASE}/spending/?type=budget_function&fiscal_year=${fy}`
-  console.log(`  Fetching budget function breakdown FY${fy}...`)
+async function apiPost(path, body) {
+  const url = `${BASE}${path}`
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'budget_function',
-      filters: { agency: DOD_AGENCY_ID },
-    }),
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`USASpending budget function failed: ${res.status}`)
+  if (!res.ok) {
+    const b = await res.text().catch(() => '')
+    throw new Error(`POST ${path} → ${res.status}: ${b.slice(0, 200)}`)
+  }
   return res.json()
 }
 
-/**
- * Fetch DoD federal accounts with obligation amounts
- */
-async function fetchDoDFederalAccounts(fy, period) {
-  const url = `${USASPENDING_BASE}/reporting/agencies/${DOD_AGENCY_ID}/overview/?fiscal_year=${fy}&fiscal_period=${period}`
-  console.log(`  Fetching DoD federal accounts FY${fy} P${period}...`)
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`USASpending DoD accounts failed: ${res.status}`)
-  return res.json()
+// ── Data fetchers ──────────────────────────────────────────────────
+
+/** DoD budgetary resources by FY — total BA, obligations, outlays */
+async function fetchDoDResources(fy) {
+  console.log(`  [1/4] DoD budgetary resources FY${fy}...`)
+  return apiGet(`/agency/${DOD_CODE}/budgetary_resources/?fiscal_year=${fy}`)
 }
 
-/**
- * Fetch top DoD award obligations (contracts, grants, IDVs)
- */
-async function fetchDoDTopAwards(fy) {
-  const url = `${USASPENDING_BASE}/search/spending_by_award/`
-  console.log(`  Fetching top DoD awards FY${fy}...`)
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      filters: {
-        agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
-        time_period: [{ start_date: `${fy - 1}-10-01`, end_date: `${fy}-09-30` }],
-        award_type_codes: ['A', 'B', 'C', 'D'], // Contracts
-      },
-      fields: ['Award ID', 'Recipient Name', 'Award Amount', 'Total Outlays', 'Award Type', 'Awarding Agency', 'Awarding Sub Agency'],
-      sort: 'Award Amount',
-      order: 'desc',
-      limit: 50,
-      page: 1,
-    }),
-  })
-  if (!res.ok) throw new Error(`USASpending awards failed: ${res.status}`)
-  return res.json()
+/** DoD obligations broken down by award category */
+async function fetchDoDByCategory(fy) {
+  console.log(`  [2/4] DoD obligations by award category FY${fy}...`)
+  return apiGet(`/agency/${DOD_CODE}/obligations_by_award_category/?fiscal_year=${fy}`)
 }
 
-/**
- * Fetch DoD spending by program activity (budget execution detail)
- */
-async function fetchDoDProgramActivity(fy, period) {
-  const url = `${USASPENDING_BASE}/reporting/agencies/${DOD_AGENCY_ID}/discrepancies/?fiscal_year=${fy}&fiscal_period=${period}`
-  console.log(`  Fetching program activity FY${fy} P${period}...`)
+/** Agency reporting overview — data submission status and obligation differences */
+async function fetchAgencyOverview(fy, period) {
+  console.log(`  [3/4] Agency reporting overview FY${fy} P${period}...`)
+  // Try requested period, fall back to period-1 if 404/400
   try {
-    const res = await fetch(url)
-    if (!res.ok) return null
-    return res.json()
-  } catch {
-    return null
+    return await apiGet(`/reporting/agencies/overview/?fiscal_year=${fy}&fiscal_period=${period}&filter=defense&limit=25`)
+  } catch (e) {
+    if (period > 2) {
+      console.log(`        → P${period} not available, trying P${period - 1}...`)
+      return await apiGet(`/reporting/agencies/overview/?fiscal_year=${fy}&fiscal_period=${period - 1}&filter=defense&limit=25`)
+    }
+    throw e
   }
 }
 
-// ── Format data as text for embedding ─────────────────────────────
+/** Top DoD contract awards for the fiscal year */
+async function fetchTopContracts(fy) {
+  console.log(`  [4/4] Top DoD contracts FY${fy}...`)
+  const start = `${fy - 1}-10-01`
+  const end   = `${fy}-09-30`
+  return apiPost('/search/spending_by_award/', {
+    filters: {
+      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
+      time_period: [{ start_date: start, end_date: end }],
+      award_type_codes: ['A', 'B', 'C', 'D'],
+    },
+    fields: ['Award ID', 'Recipient Name', 'Award Amount', 'Awarding Sub Agency', 'Award Type', 'Description'],
+    sort: 'Award Amount',
+    order: 'desc',
+    limit: 40,
+    page: 1,
+  })
+}
 
-function formatObligationData({ fy, period, agencyData, budgetFunctionData, accountData, awardData }) {
+// ── Format as text for chunking/embedding ─────────────────────────
+
+function fmt(v, unit = 'B') {
+  if (v == null) return 'N/A'
+  const n = Number(v)
+  if (unit === 'B') return `$${(n / 1e9).toFixed(1)}B`
+  if (unit === 'M') return `$${(n / 1e6).toFixed(0)}M`
+  if (unit === '%') return `${(n * 100).toFixed(1)}%`
+  return String(n)
+}
+
+function buildContent({ fy, period, resources, byCategory, overview, contracts }) {
+  const label = periodLabel(fy, period)
   const lines = []
-  const label = `FY${fy} Period ${period} (through ${getMonthLabel(period, fy)})`
 
-  lines.push(`# DoD Obligation Analysis — ${label}`)
-  lines.push(`Source: USASpending.gov API. Retrieved: ${new Date().toISOString().slice(0, 10)}`)
-  lines.push(`Fiscal Year: ${fy} | Fiscal Period: ${period}`)
+  lines.push(`# DoD Obligation Data — ${label}`)
+  lines.push(`Source: USASpending.gov (api.usaspending.gov/api/v2)`)
+  lines.push(`Pulled: ${new Date().toISOString().slice(0,10)} | Fiscal Year: ${fy} | Period: ${period}/12`)
+  lines.push(`Coverage: ${Math.round(period/12*100)}% through fiscal year`)
   lines.push('')
 
-  // Agency overview
-  if (agencyData?.results) {
-    lines.push('## Agency Overview — Obligations by Reporting Entity')
-    const dodAgencies = agencyData.results.filter(a =>
-      a.agency_name?.toLowerCase().includes('defense') ||
-      a.agency_name?.toLowerCase().includes('army') ||
-      a.agency_name?.toLowerCase().includes('navy') ||
-      a.agency_name?.toLowerCase().includes('air force') ||
-      a.agency_name?.toLowerCase().includes('marine')
-    )
-    for (const agency of dodAgencies.slice(0, 20)) {
-      lines.push(`- ${agency.agency_name}: Obligations $${fmtM(agency.total_budgetary_resources)}M | Outlays $${fmtM(agency.total_outlays)}M | Diff $${fmtM(agency.diff_approp_ocpa)}M`)
+  // Budgetary resources
+  if (resources) {
+    const r = resources.agency_data_by_year?.find(d => d.fiscal_year === fy) || resources
+    lines.push('## DoD Budgetary Resources')
+    if (r.total_budgetary_resources != null) lines.push(`Total Budgetary Resources: ${fmt(r.total_budgetary_resources)}`)
+    if (r.total_obligations != null)          lines.push(`Total Obligations Incurred: ${fmt(r.total_obligations)}`)
+    if (r.total_outlays != null)              lines.push(`Total Outlays: ${fmt(r.total_outlays)}`)
+    if (r.total_budgetary_resources && r.total_obligations) {
+      const rate = r.total_obligations / r.total_budgetary_resources
+      lines.push(`Obligation Rate: ${fmt(rate, '%')}`)
     }
     lines.push('')
   }
 
-  // Budget function
-  if (budgetFunctionData?.results) {
-    lines.push('## Spending by Budget Function')
-    for (const bf of budgetFunctionData.results.slice(0, 15)) {
-      lines.push(`- ${bf.name} (${bf.id}): Obligations $${fmtB(bf.obligated_amount)}B`)
+  // By category
+  if (byCategory?.results) {
+    lines.push('## DoD Obligations by Award Category')
+    for (const c of byCategory.results) {
+      lines.push(`- ${c.category}: ${fmt(c.aggregated_amount)} (${c.transaction_count?.toLocaleString() ?? '?'} transactions)`)
     }
     lines.push('')
   }
 
-  // Federal accounts
-  if (accountData) {
-    lines.push('## DoD Federal Accounts Summary')
-    if (accountData.total_budgetary_resources !== undefined) {
-      lines.push(`Total Budgetary Resources: $${fmtB(accountData.total_budgetary_resources)}B`)
-      lines.push(`Total Obligations: $${fmtB(accountData.total_obligations)}B`)
-      lines.push(`Total Outlays: $${fmtB(accountData.total_outlays)}B`)
-      if (accountData.obligation_rate !== undefined) {
-        lines.push(`Obligation Rate: ${(accountData.obligation_rate * 100).toFixed(1)}%`)
-      }
+  // Agency reporting overview — DoD-related agencies
+  if (overview?.results?.length) {
+    lines.push('## DoD Component Reporting Status')
+    for (const a of overview.results.slice(0, 20)) {
+      const gtas = fmt(a.tas_account_discrepancies_totals?.gtas_obligation_total, 'M')
+      const diff = a.obligation_difference != null ? fmt(a.obligation_difference, 'M') : 'N/A'
+      lines.push(`- ${a.agency_name} (${a.abbreviation ?? a.toptier_code}): GTAS obligations ${gtas} | Diff ${diff}`)
     }
     lines.push('')
   }
 
-  // Top awards
-  if (awardData?.results) {
-    lines.push('## Top DoD Contract Awards')
-    lines.push(`Total awards shown: ${awardData.results.length} (sorted by obligation amount)`)
-    for (const award of awardData.results.slice(0, 30)) {
-      const amt = award['Award Amount'] ? `$${fmtM(award['Award Amount'])}M` : 'N/A'
-      const sub = award['Awarding Sub Agency'] || award['Awarding Agency'] || 'DoD'
-      lines.push(`- ${award['Recipient Name'] ?? 'Unknown'} | ${sub} | ${award['Award Type'] ?? ''} | ${amt}`)
+  // Top contracts
+  if (contracts?.results?.length) {
+    lines.push(`## Top DoD Contract Awards — FY${fy} (sorted by obligation amount)`)
+    lines.push(`Showing ${contracts.results.length} largest contracts out of ${contracts.page_metadata?.total?.toLocaleString() ?? '?'} total`)
+    for (const c of contracts.results) {
+      const amt  = c['Award Amount'] ? fmt(c['Award Amount'], 'M') : 'N/A'
+      const sub  = c['Awarding Sub Agency'] || 'DoD'
+      const name = c['Recipient Name'] || 'Unknown'
+      const type = c['Award Type'] || ''
+      lines.push(`- ${name} | ${sub} | ${type} | ${amt}`)
     }
     lines.push('')
   }
 
-  lines.push('## Key Metrics for Agent Analysis')
-  lines.push(`Fiscal Year: ${fy}`)
-  lines.push(`Reporting Period: ${period} of 12 (${Math.round(period / 12 * 100)}% through fiscal year)`)
-  lines.push('Data currency: Weekly automated pull from USASpending.gov')
+  lines.push('## Context for Analysis')
+  lines.push(`This data covers DoD obligation activity for ${label}.`)
+  lines.push('Use this data to: analyze obligation rates vs budget authority, identify top contractors, assess execution pace by component.')
+  lines.push('For SF-133 reconciliation or TAFS-level detail, upload agency execution reports to the document library.')
 
   return lines.join('\n')
 }
 
-function fmtB(val) { return val ? (val / 1e9).toFixed(1) : '?' }
-function fmtM(val) { return val ? (val / 1e6).toFixed(0) : '?' }
+// ── Ingest ─────────────────────────────────────────────────────────
 
-function getMonthLabel(period, fy) {
-  // Period 1 = October, Period 12 = September
-  const months = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
-  const year = period <= 3 ? fy - 1 : fy
-  return `${months[period - 1]} ${year}`
-}
-
-// ── Ingest to FedFMMatter ──────────────────────────────────────────
-
-async function ingest({ filename, content, dataset, period, metadata }) {
-  console.log(`  Ingesting ${filename} (${content.length} chars)...`)
+async function ingest(filename, content, dataset, period) {
+  console.log(`\n  Ingesting "${filename}" (${content.length.toLocaleString()} chars)...`)
   const res = await fetch(INGEST_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${INGEST_SECRET}`,
-    },
-    body: JSON.stringify({ source: 'usaspending', dataset, period, filename, content, metadata }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${INGEST_SECRET}` },
+    body: JSON.stringify({ source: 'usaspending', dataset, period, filename, content }),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(`Ingest failed: ${data.error}`)
-  console.log(`  ✓ ${data.action} — ${data.chunk_count} chunks`)
+  if (!res.ok) throw new Error(data.error || `Ingest returned ${res.status}`)
+  console.log(`  ✓ ${data.action} — ${data.chunk_count} chunks embedded`)
   return data
 }
 
 // ── Main ───────────────────────────────────────────────────────────
 
 async function main() {
-  const { fy, period } = getCurrentFiscalPeriod()
-  console.log(`\n🔄 DoD Obligation Data Pull — FY${fy} Period ${period}`)
+  const { fy, period } = getFiscalPeriodWithLag(2)
+  const label = `FY${fy}_P${String(period).padStart(2,'0')}`
+
+  console.log(`\n🔄 DoD Obligation Data Pull`)
+  console.log(`   Period: ${periodLabel(fy, period)}`)
   console.log(`   ${new Date().toISOString()}\n`)
 
-  const results = []
+  // Fetch all datasets (non-fatal failures on individual endpoints)
+  const [resources, byCategory, overview, contracts] = await Promise.allSettled([
+    fetchDoDResources(fy),
+    fetchDoDByCategory(fy),
+    fetchAgencyOverview(fy, period),
+    fetchTopContracts(fy),
+  ]).then(results => results.map((r, i) => {
+    if (r.status === 'rejected') {
+      console.warn(`  ⚠ Dataset ${i+1} failed (non-fatal): ${r.reason?.message}`)
+      return null
+    }
+    return r.value
+  }))
 
-  try {
-    // 1. Agency overview
-    const agencyData = await fetchDoDObligationsByPeriod(fy, period)
-
-    // 2. Budget function breakdown
-    const budgetFunctionData = await fetchDoDByBudgetFunction(fy).catch(() => null)
-
-    // 3. DoD federal accounts
-    const accountData = await fetchDoDFederalAccounts(fy, period).catch(() => null)
-
-    // 4. Top contract awards
-    const awardData = await fetchDoDTopAwards(fy).catch(() => null)
-
-    // Format combined content
-    const content = formatObligationData({ fy, period, agencyData, budgetFunctionData, accountData, awardData })
-    const periodLabel = `${fy}_P${String(period).padStart(2, '0')}`
-    const filename = `usaspending_dod_obligations_${periodLabel}.txt`
-
-    const result = await ingest({
-      filename,
-      content,
-      dataset: 'dod_obligations',
-      period: periodLabel,
-      metadata: { fy, period, pull_date: new Date().toISOString() },
-    })
-    results.push(result)
-  } catch (err) {
-    console.error(`  ❌ Obligation pull failed: ${err.message}`)
-    results.push({ error: err.message })
+  const successCount = [resources, byCategory, overview, contracts].filter(Boolean).length
+  if (successCount === 0) {
+    console.error('❌ All API calls failed. USASpending.gov may be down.')
+    process.exit(1)
   }
 
-  // Summary
-  console.log('\n── Summary ──────────────────────────────────────')
-  const ok = results.filter(r => !r.error)
-  const failed = results.filter(r => r.error)
-  console.log(`✓ ${ok.length} dataset(s) ingested successfully`)
-  if (failed.length) {
-    console.log(`✗ ${failed.length} failed`)
-    failed.forEach(f => console.log(`  - ${f.error}`))
-  }
-  console.log('')
+  const content = buildContent({ fy, period, resources, byCategory, overview, contracts })
+  const filename = `usaspending_dod_obligations_${label}.txt`
 
-  if (failed.length === results.length) {
-    process.exit(1) // Fail the Action if everything failed
-  }
+  await ingest(filename, content, 'dod_obligations', label)
+
+  console.log(`\n✓ Done — ${label} ingested (${successCount}/4 datasets)`)
 }
 
 main().catch(err => {
-  console.error('Fatal error:', err)
+  console.error('\n❌ Fatal:', err.message)
   process.exit(1)
 })

@@ -1,22 +1,18 @@
 name: DoD Obligation Data — Weekly Pull
 
 on:
-  # Run every Sunday at 06:00 UTC (after USASpending.gov weekend refresh)
   schedule:
-    - cron: '0 6 * * 0'
-
-  # Allow manual trigger from GitHub Actions UI
+    - cron: '0 6 * * 0'   # Every Sunday 06:00 UTC
   workflow_dispatch:
     inputs:
-      fiscal_year:
-        description: 'Override fiscal year (e.g. 2025). Leave blank for current.'
-        required: false
-        type: string
       dry_run:
         description: 'Dry run — fetch data but do not ingest'
         required: false
         type: boolean
         default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # opt into Node 24 now
 
 jobs:
   pull-dod-data:
@@ -28,23 +24,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
-      - name: Pull DoD obligations and ingest
+      - name: Fetch and ingest DoD obligation data
         env:
           INGEST_URL: ${{ secrets.INGEST_URL }}
           INGEST_SECRET: ${{ secrets.INGEST_SECRET }}
-          FISCAL_YEAR_OVERRIDE: ${{ inputs.fiscal_year }}
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: |
-          echo "Starting DoD obligation data pull..."
-          node scripts/fetch-dod-obligations.mjs
+        run: node scripts/fetch-dod-obligations.mjs
 
       - name: Notify on failure
         if: failure()
-        run: |
-          echo "::error::DoD obligation data pull failed. Check logs above."
-          echo "USASpending.gov may be down or the ingest endpoint may be unreachable."
+        run: echo "::error::DoD obligation pull failed. USASpending.gov may be down or INGEST_URL/INGEST_SECRET secrets may not be configured."
