@@ -260,7 +260,11 @@ Clearly distinguish: "From uploaded document [name]:" vs "From domain knowledge:
 ${skill ? skill.systemPrompt : ''}
 
 CRITICAL: If asked to list ALL material weaknesses, list ALL 26 using the complete list in your system prompt.
-If documents only partially confirm them, list all 26 and note which ones were confirmed by uploaded documents.`
+If documents only partially confirm them, list all 26 and note which ones were confirmed by uploaded documents.
+
+When calling generate_report: use a DESCRIPTIVE title that summarizes the content, e.g.:
+"DoD FY2025 Audit — 26 Material Weaknesses Analysis" or "FY2027 Budget Procurement Analysis by Service"
+Never use the user's raw instruction text as the title.`
 
   const synthesisMessages: UnifiedMessage[] = [{
     role: 'user',
@@ -320,16 +324,44 @@ If documents only partially confirm them, list all 26 and note which ones were c
     }
   }
 
-  // Auto-save report if requested
-  if (/\b(save|report)\b/i.test(userMessage) && finalText.length > 200) {
+  // Auto-save report if user asked — but only if model didn't already call generate_report
+  const alreadySaved = allToolCalls.some(tc => tc.name === 'generate_report' && (tc.output as any)?.ok)
+  const wantsReport = /\b(save|save as report|generate report|create report)\b/i.test(userMessage)
+
+  if (wantsReport && !alreadySaved && finalText.length > 200) {
     try {
-      const title = userMessage.replace(/save.*$/i, '').trim().slice(0, 80) || 'Analysis'
-      const saved = await executeTool('generate_report', { title, category: ctx.category ?? 'budget', content_markdown: finalText },
-        { userId: ctx.userId, sessionId: ctx.sessionId, category: ctx.category })
+      // Smart title: take the substantive part of the user request, not the save instruction
+      // e.g. "list all material weaknesses and save as a report" → "All Material Weaknesses — DoD FY2025 Audit"
+      // e.g. "come with a title, save this" → first line of the response
+      let title = userMessage
+        .replace(/\b(save (this |it |the |as |a |the analysis |as a )?report|generate (a |the )?report|create (a |the )?report|and save.*$)\b/gi, '')
+        .replace(/[,\.]+$/, '')
+        .trim()
+
+      // If title is still generic/empty, use first meaningful line of the response
+      if (!title || title.length < 10) {
+        const firstHeading = finalText.match(/^#+\s*(.+)$/m)?.[1]
+        const firstSentence = finalText.replace(/[#*`]/g, '').trim().split(/[.\n]/)[0]
+        title = firstHeading || firstSentence || 'Analysis'
+      }
+
+      title = title.slice(0, 100)
+
+      const saved = await executeTool('generate_report', {
+        title,
+        category: ctx.category ?? 'budget',
+        content_markdown: finalText,
+      }, { userId: ctx.userId, sessionId: ctx.sessionId, category: ctx.category })
+
       allToolCalls.push({ name: 'generate_report', input: { title }, output: saved })
       onEvent?.({ type: 'tool_result', id: 'autosave', name: 'generate_report', output: saved })
-      const note = '\n\n---\n✅ **Report saved** — available in the Reports section.'
+      const note = `\n\n---\n✅ **Report saved:** "${title}" — find it in the Reports section.`
       finalText += note
+      onEvent?.({ type: 'text', text: note })
+    } catch (e) {
+      console.error('Auto-save failed:', e)
+    }
+  }
       onEvent?.({ type: 'text', text: note })
     } catch {}
   }
