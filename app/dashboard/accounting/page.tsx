@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Coins, Clock, TrendingDown, AlertTriangle, FolderOpen, Receipt, Calculator } from 'lucide-react'
+import { ArrowRight, Coins, Clock, TrendingDown, AlertTriangle, FolderOpen, Receipt, Calculator, RefreshCw, Database, ExternalLink, CheckCircle2 } from 'lucide-react'
 
 export default function AccountingPage() {
   return (
@@ -8,17 +8,61 @@ export default function AccountingPage() {
         <p className="text-[10px] font-medium tracking-[0.2em] uppercase text-gold mb-2">Accounting & Execution</p>
         <h1 className="text-2xl font-medium tracking-tight mb-1">Obligation analysis</h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Budget execution the USSGL way. Track obligation rates by quarter, flag aging ULOs, identify expiring-year cancellation risk, and distinguish budget authority from obligations from outlays. The agent knows the difference.
+          Budget execution the USSGL way. Track obligation rates by quarter, flag aging ULOs, identify expiring-year cancellation risk, and distinguish budget authority from obligations from outlays. Live DoD data pulled weekly from USASpending.gov.
         </p>
       </header>
 
-      <section className="mb-10">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Execution snapshot</p>
-        <div className="grid gap-3 md:grid-cols-4">
-          <MetricCard icon={Coins} label="Total budget authority" value="—" sub="Across all TAFS" />
-          <MetricCard icon={TrendingDown} label="Obligation rate" value="—" sub="Obligated / available" />
-          <MetricCard icon={Clock} label="Aging ULO" value="—" sub="Over 120 days" warning />
-          <MetricCard icon={AlertTriangle} label="Cancellation risk" value="—" sub="Expiring current year" warning />
+      {/* USASpending live data feed status */}
+      <section className="mb-8">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Live data feed — USASpending.gov</p>
+        <div className="rounded-lg border border-border bg-card p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Database className="h-4 w-4 text-gold mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium mb-1">DoD obligation data — automated weekly pull</p>
+                <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
+                  A GitHub Action runs every Sunday and pulls current-period DoD obligation totals, federal account breakdowns, and top contract awards from the USASpending.gov API. The data is automatically chunked, embedded, and added to the accounting knowledge base — no manual upload needed.
+                </p>
+                <div className="flex flex-wrap gap-3 mt-3">
+                  <DataBadge label="Agency obligations" />
+                  <DataBadge label="Federal accounts" />
+                  <DataBadge label="Budget functions" />
+                  <DataBadge label="Top contract awards" />
+                  <DataBadge label="Obligation rates" />
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 shrink-0">
+              <a
+                href="https://api.usaspending.gov"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground transition flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" /> USASpending API
+              </a>
+              <a
+                href="https://github.com/icetonges/bad/actions"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground transition flex items-center gap-1"
+              >
+                <RefreshCw className="h-3 w-3" /> GitHub Actions
+              </a>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-border">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Setup required</p>
+            <ol className="space-y-1 text-xs text-muted-foreground">
+              <li><span className="text-foreground font-medium">1.</span> In Vercel → Settings → Environment Variables, add <code className="bg-muted px-1 rounded text-[11px]">INGEST_SECRET</code> with any long random string.</li>
+              <li><span className="text-foreground font-medium">2.</span> In GitHub → your repo → Settings → Secrets and variables → Actions, add two secrets:</li>
+              <li className="pl-4"><code className="bg-muted px-1 rounded text-[11px]">INGEST_URL</code> = <code className="bg-muted px-1 rounded text-[11px]">https://fedfm.vercel.app/api/ingest</code></li>
+              <li className="pl-4"><code className="bg-muted px-1 rounded text-[11px]">INGEST_SECRET</code> = same value as in Vercel</li>
+              <li><span className="text-foreground font-medium">3.</span> Push this code to GitHub. The Action runs automatically every Sunday, or trigger it manually from the Actions tab.</li>
+            </ol>
+          </div>
         </div>
       </section>
 
@@ -109,5 +153,13 @@ function QuickAction({ prompt, icon: Icon, title, copy }: { prompt: string; icon
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition mt-0.5" />
       </div>
     </Link>
+  )
+}
+
+function DataBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-green-600/10 text-green-600 border border-green-600/20">
+      <CheckCircle2 className="h-2.5 w-2.5" /> {label}
+    </span>
   )
 }

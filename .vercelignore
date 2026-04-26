@@ -9,4 +9,5 @@ __pycache__/
 *.pyc
 *.pyo
 docs/
-scripts/
+scripts/migrate.mjs
+scripts/setup.sh
