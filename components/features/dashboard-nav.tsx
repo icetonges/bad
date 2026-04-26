@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Home, MessageSquare, FileText, Archive,
+  Home, MessageSquare, FileText, Archive, BarChart2, Package,
   BarChart3, FolderOpen, FileStack,
   ShieldCheck, ClipboardCheck,
   Coins, Receipt,
@@ -21,8 +21,9 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard',          icon: Home,         label: 'Overview' },
       { href: '/dashboard/chat',     icon: MessageSquare, label: 'Ask the agent' },
-      { href: '/dashboard/reports',    icon: FileText,     label: 'Reports' },
-      { href: '/dashboard/inquiries',  icon: Archive,      label: 'Inquiry archive' },
+      { href: '/dashboard/reports',                icon: FileText,     label: 'Reports' },
+      { href: '/dashboard/inquiries',              icon: Archive,      label: 'Inquiry archive' },
+      { href: '/dashboard/export',                 icon: Package,      label: 'Export center' },
     ],
   },
   {
@@ -44,8 +45,9 @@ const GROUPS: NavGroup[] = [
   {
     label: 'Accounting & Execution',
     items: [
-      { href: '/dashboard/accounting',         icon: Coins,      label: 'Obligation analysis' },
-      { href: '/dashboard/accounting/library', icon: FolderOpen, label: 'Document library' },
+      { href: '/dashboard/accounting',           icon: Coins,      label: 'Obligation analysis' },
+      { href: '/dashboard/accounting/dashboard',  icon: BarChart2,  label: 'Live dashboard' },
+      { href: '/dashboard/accounting/library',    icon: FolderOpen, label: 'Document library' },
     ],
   },
   {
