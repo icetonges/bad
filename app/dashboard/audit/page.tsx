@@ -8,28 +8,23 @@ import {
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 
-interface DocStats {
+interface PulseData {
   total_docs: number
   indexed_docs: number
   total_chunks: number
+  open_findings: number | null
+  opinion_score: string | null
 }
 
 function usePulseStats() {
-  const [stats, setStats] = useState<DocStats | null>(null)
+  const [stats, setStats] = useState<PulseData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/upload?category=audit')
+    fetch('/api/audit/pulse')
       .then(r => r.json())
-      .then(data => {
-        const docs = data.documents ?? []
-        setStats({
-          total_docs: docs.length,
-          indexed_docs: docs.filter((d: any) => (d.chunk_count ?? 0) > 0).length,
-          total_chunks: docs.reduce((s: number, d: any) => s + (d.chunk_count ?? 0), 0),
-        })
-      })
-      .catch(() => setStats({ total_docs: 0, indexed_docs: 0, total_chunks: 0 }))
+      .then(data => setStats(data))
+      .catch(() => setStats({ total_docs: 0, indexed_docs: 0, total_chunks: 0, open_findings: null, opinion_score: null }))
       .finally(() => setLoading(false))
   }, [])
 
@@ -114,23 +109,23 @@ export default function AuditPage() {
             tone={stats?.total_chunks ? 'ok' : 'neutral'}
           />
 
-          {/* Open findings — populated by agent */}
+          {/* Open findings */}
           <PulseCard
             icon={AlertTriangle}
             label="Open findings"
-            value="—"
-            sub={hasDocuments ? 'Ask agent: Summarize findings' : 'Upload IG/GAO reports first'}
-            tone="neutral"
+            value={loading ? '…' : stats?.open_findings != null ? String(stats.open_findings) : '—'}
+            sub={loading ? 'Loading…' : stats?.open_findings != null ? '26 MWs · 2 SDs · FY2025 (DODIG-2026-032)' : hasDocuments ? 'Ask agent to count findings' : 'Upload IG/GAO reports first'}
+            tone={stats?.open_findings != null ? 'destructive' : 'neutral'}
             actionHref={hasDocuments ? `/dashboard/chat?category=audit&prompt=${encodeURIComponent('Count and list all open findings in my uploaded audit documents. Separate material weaknesses from significant deficiencies.')}` : undefined}
           />
 
           {/* Opinion readiness */}
           <PulseCard
             icon={FileCheck}
-            label="Opinion readiness"
-            value="—"
-            sub={hasDocuments ? 'Ask agent: Opinion assessment' : 'Upload audit reports first'}
-            tone="neutral"
+            label="Current opinion"
+            value={loading ? '…' : stats?.opinion_score ?? '—'}
+            sub={loading ? 'Loading…' : stats?.opinion_score === 'Disclaimer' ? 'FY2025 — 8th consecutive disclaimer' : stats?.opinion_score ? `Detected from uploaded documents` : hasDocuments ? 'Ask agent for assessment' : 'Upload audit reports first'}
+            tone={stats?.opinion_score === 'Disclaimer' ? 'destructive' : stats?.opinion_score === 'Clean' ? 'ok' : 'neutral'}
             actionHref={hasDocuments ? `/dashboard/chat?category=audit&prompt=${encodeURIComponent('Assess the likelihood of achieving an improved audit opinion in the next cycle based on my uploaded documents.')}` : undefined}
           />
         </div>

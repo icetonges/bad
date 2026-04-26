@@ -362,9 +362,6 @@ Never use the user's raw instruction text as the title.`
       console.error('Auto-save failed:', e)
     }
   }
-      onEvent?.({ type: 'text', text: note })
-    } catch {}
-  }
 
   return { text: finalText, toolCalls: allToolCalls }
 }
