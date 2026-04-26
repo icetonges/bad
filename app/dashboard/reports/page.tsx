@@ -27,6 +27,7 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([])
   const [selected, setSelected] = useState<Report | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingContent, setLoadingContent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
 
@@ -40,6 +41,22 @@ export default function ReportsPage() {
       setError(String(e))
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function selectReport(r: Report) {
+    // If content already loaded (re-click), just show it
+    if (selected?.id === r.id && selected.content) return
+    setSelected({ ...r, content: '' })
+    setLoadingContent(true)
+    try {
+      const res = await fetch(`/api/reports?id=${r.id}`)
+      const data = await res.json()
+      if (data.report) setSelected(data.report)
+    } catch (e) {
+      setSelected({ ...r, content: `Error loading content: ${e}` })
+    } finally {
+      setLoadingContent(false)
     }
   }
 
@@ -101,7 +118,7 @@ export default function ReportsPage() {
 
           {reports.map((r) => (
             <div key={r.id} className={`border-b border-border group relative ${selected?.id === r.id ? 'bg-accent' : 'hover:bg-accent/50'} transition`}>
-              <button onClick={() => setSelected(r)} className="w-full text-left p-4 pr-10">
+              <button onClick={() => selectReport(r)} className="w-full text-left p-4 pr-10">
                 <div className="flex items-start gap-2.5">
                   <FileText className={`h-4 w-4 mt-0.5 shrink-0 ${CATEGORY_COLORS[r.category] ?? 'text-muted-foreground'}`} />
                   <div className="min-w-0">
@@ -149,9 +166,15 @@ export default function ReportsPage() {
               <h1 className="text-2xl font-medium tracking-tight mb-1">{selected.title}</h1>
               <p className="text-xs text-muted-foreground">{formatDate(selected.created_at)}</p>
             </div>
-            <div className="prose-fed text-sm leading-relaxed">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{selected.content}</ReactMarkdown>
-            </div>
+            {loadingContent ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading report content…
+              </div>
+            ) : (
+              <div className="prose-fed text-sm leading-relaxed">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{selected.content ?? ''}</ReactMarkdown>
+              </div>
+            )}
           </article>
         ) : (
           <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
