@@ -103,14 +103,20 @@ async function callGemini(spec: ProviderSpec, apiKey: string, params: {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`)
   const data = await res.json()
-  const parts = data.candidates?.[0]?.content?.parts ?? []
+  const candidate = data.candidates?.[0]
+  const parts = candidate?.content?.parts ?? []
+  const finishReason: string = candidate?.finishReason ?? ''
   let text = ''
   const toolCalls: UnifiedResponse['tool_calls'] = []
   for (const p of parts) {
     if (p.text) text += p.text
     if (p.functionCall) toolCalls.push({ id: `c_${Math.random().toString(36).slice(2,9)}`, name: p.functionCall.name, input: p.functionCall.args ?? {} })
   }
-  return { text, tool_calls: toolCalls, stop_reason: toolCalls.length ? 'tool_use' : 'end_turn', provider: spec.provider, model: spec.model }
+  const stopReason: UnifiedResponse['stop_reason'] =
+    toolCalls.length > 0 ? 'tool_use' :
+    finishReason === 'MAX_TOKENS' ? 'max_tokens' :
+    'end_turn'
+  return { text, tool_calls: toolCalls, stop_reason: stopReason, provider: spec.provider, model: spec.model }
 }
 
 async function callGroq(spec: ProviderSpec, apiKey: string, params: {
@@ -138,11 +144,16 @@ async function callGroq(spec: ProviderSpec, apiKey: string, params: {
   if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`)
   const data = await res.json()
   const msg = data.choices?.[0]?.message
+  const finishReason: string = data.choices?.[0]?.finish_reason ?? ''
   const text = msg?.content || ''
   const toolCalls = (msg?.tool_calls ?? []).map((tc: any) => ({
     id: tc.id, name: tc.function.name, input: tryParse(tc.function.arguments) ?? {}
   }))
-  return { text, tool_calls: toolCalls, stop_reason: toolCalls.length ? 'tool_use' : 'end_turn', provider: spec.provider, model: spec.model }
+  const stopReason: UnifiedResponse['stop_reason'] =
+    toolCalls.length > 0 ? 'tool_use' :
+    finishReason === 'length' ? 'max_tokens' :
+    'end_turn'
+  return { text, tool_calls: toolCalls, stop_reason: stopReason, provider: spec.provider, model: spec.model }
 }
 
 function geminiSchema(s: any): any {

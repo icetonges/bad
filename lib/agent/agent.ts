@@ -243,28 +243,26 @@ ${skill ? skill.systemPrompt : ''}`
     }
   }
 
-  // ── PHASE 2: Expert synthesis ──────────────────────────────────────
+  // ── PHASE 2: Pure text synthesis — no tools, no interruptions ─────
+  // Charts are already collected from Phase 1.
+  // We write text only. If max_tokens, we ask the model to continue.
   onEvent?.({ type: 'status', message: 'Writing analysis…' })
 
   const evidenceBlock = gatheredPassages.length > 0
     ? `## DOCUMENT EVIDENCE (${gatheredPassages.length} search results)\n\n${gatheredPassages.join('\n\n---\n\n')}`
-    : `## NOTE: No document passages found. Answer from domain knowledge in system prompt and clearly state which facts come from training knowledge vs uploaded documents.`
+    : `## NOTE: No document passages found. Answer from domain knowledge in your system prompt. State clearly which facts come from domain knowledge vs uploaded documents.`
 
   const synthesisSystem = `You are FedFMMatter, an expert federal financial management analyst.
 
-Write a COMPLETE, thorough, expert-quality response. Do NOT cut off mid-sentence or mid-list.
-Use ALL evidence provided. Supplement with domain knowledge from your system context.
-Format with markdown headers and tables. Cite [filename] for document facts.
-Clearly distinguish: "From uploaded document [name]:" vs "From domain knowledge:"
+Write a COMPLETE response. Use every piece of evidence provided. Do not stop early.
+Use markdown headers and tables. Cite [filename] for every document fact.
+Distinguish "From [filename]:" vs "From domain knowledge:".
 
 ${skill ? skill.systemPrompt : ''}
 
-CRITICAL: If asked to list ALL material weaknesses, list ALL 26 using the complete list in your system prompt.
-If documents only partially confirm them, list all 26 and note which ones were confirmed by uploaded documents.
-
-When calling generate_report: use a DESCRIPTIVE title that summarizes the content, e.g.:
-"DoD FY2025 Audit — 26 Material Weaknesses Analysis" or "FY2027 Budget Procurement Analysis by Service"
-Never use the user's raw instruction text as the title.`
+CRITICAL: List ALL 26 material weaknesses when asked. If documents only partially confirm them,
+list all 26 and note which are confirmed by uploaded documents.
+Use a DESCRIPTIVE title in generate_report — never the user's raw instruction text.`
 
   const synthesisMessages: UnifiedMessage[] = [{
     role: 'user',
@@ -272,16 +270,15 @@ Never use the user's raw instruction text as the title.`
   }]
 
   let finalText = ''
-  let synthStep = 0
 
-  while (synthStep < 6) {
-    synthStep++
+  // Loop handles two cases: tool_use (chart/report mid-response) and max_tokens (response too long)
+  for (let round = 0; round < 10; round++) {
     let synthesis
     try {
       synthesis = await generateWithTools({
         system: synthesisSystem,
         messages: synthesisMessages,
-        tools: tools.filter(t => ['generate_chart', 'generate_report'].includes(t.name)),
+        tools: [],          // ← NO tools in synthesis. Zero interruptions.
         maxTokens: 8000,
         onProviderChange: spec => onEvent?.({ type: 'provider', provider: spec.provider, model: spec.model }),
       })
@@ -292,36 +289,23 @@ Never use the user's raw instruction text as the title.`
       break
     }
 
-    // Stream this round's text immediately
     if (synthesis.text) {
       finalText += synthesis.text
       onEvent?.({ type: 'text', text: synthesis.text })
     }
 
-    // Done writing — exit loop
-    if (synthesis.stop_reason !== 'tool_use' || synthesis.tool_calls.length === 0) break
+    if (synthesis.stop_reason === 'end_turn') break  // Model finished naturally ✓
 
-    // Model called a tool (chart/report) — execute it then continue writing
-    synthesisMessages.push({
-      role: 'assistant',
-      content: synthesis.text || '',
-      tool_calls: synthesis.tool_calls,
-    })
-
-    for (const tc of synthesis.tool_calls) {
-      onEvent?.({ type: 'tool_call', id: tc.id, name: tc.name, input: tc.input })
-      let out: unknown
-      try { out = await executeTool(tc.name, tc.input, { userId: ctx.userId, sessionId: ctx.sessionId, category: ctx.category }) }
-      catch (e) { out = { error: String(e) } }
-      allToolCalls.push({ name: tc.name, input: tc.input, output: out })
-      onEvent?.({ type: 'tool_result', id: tc.id, name: tc.name, output: out })
-      synthesisMessages.push({
-        role: 'tool',
-        content: tc.name === 'generate_chart' ? `Chart created: "${(tc.input as any).title}"` : JSON.stringify(out).slice(0, 200),
-        tool_call_id: tc.id,
-        tool_name: tc.name,
-      })
+    if (synthesis.stop_reason === 'max_tokens') {
+      // Response hit token limit — ask model to continue from where it stopped
+      synthesisMessages.push({ role: 'assistant', content: synthesis.text || '' })
+      synthesisMessages.push({ role: 'user', content: 'Continue writing exactly where you left off. Do not repeat anything.' })
+      onEvent?.({ type: 'status', message: 'Continuing…' })
+      continue
     }
+
+    // Any other stop reason (error, etc.) — exit
+    break
   }
 
   // Auto-save report if user asked — but only if model didn't already call generate_report
