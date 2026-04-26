@@ -268,18 +268,42 @@ If documents only partially confirm them, list all 26 and note which ones were c
   }]
 
   let finalText = ''
-  try {
-    const synthesis = await generateWithTools({
-      system: synthesisSystem,
-      messages: synthesisMessages,
-      tools: tools.filter(t => ['generate_chart', 'generate_report'].includes(t.name)),
-      maxTokens: 8000,
-      onProviderChange: spec => onEvent?.({ type: 'provider', provider: spec.provider, model: spec.model }),
+  let synthStep = 0
+
+  while (synthStep < 6) {
+    synthStep++
+    let synthesis
+    try {
+      synthesis = await generateWithTools({
+        system: synthesisSystem,
+        messages: synthesisMessages,
+        tools: tools.filter(t => ['generate_chart', 'generate_report'].includes(t.name)),
+        maxTokens: 8000,
+        onProviderChange: spec => onEvent?.({ type: 'provider', provider: spec.provider, model: spec.model }),
+      })
+    } catch (e: any) {
+      const msg = e?.message || String(e)
+      onEvent?.({ type: 'error', message: `Synthesis error: ${msg}` })
+      if (!finalText) { finalText = `Error: ${msg}`; onEvent?.({ type: 'text', text: finalText }) }
+      break
+    }
+
+    // Stream this round's text immediately
+    if (synthesis.text) {
+      finalText += synthesis.text
+      onEvent?.({ type: 'text', text: synthesis.text })
+    }
+
+    // Done writing — exit loop
+    if (synthesis.stop_reason !== 'tool_use' || synthesis.tool_calls.length === 0) break
+
+    // Model called a tool (chart/report) — execute it then continue writing
+    synthesisMessages.push({
+      role: 'assistant',
+      content: synthesis.text || '',
+      tool_calls: synthesis.tool_calls,
     })
 
-    finalText = synthesis.text
-
-    // Execute any charts generated during synthesis
     for (const tc of synthesis.tool_calls) {
       onEvent?.({ type: 'tool_call', id: tc.id, name: tc.name, input: tc.input })
       let out: unknown
@@ -287,15 +311,13 @@ If documents only partially confirm them, list all 26 and note which ones were c
       catch (e) { out = { error: String(e) } }
       allToolCalls.push({ name: tc.name, input: tc.input, output: out })
       onEvent?.({ type: 'tool_result', id: tc.id, name: tc.name, output: out })
+      synthesisMessages.push({
+        role: 'tool',
+        content: tc.name === 'generate_chart' ? `Chart created: "${(tc.input as any).title}"` : JSON.stringify(out).slice(0, 200),
+        tool_call_id: tc.id,
+        tool_name: tc.name,
+      })
     }
-
-    if (finalText) onEvent?.({ type: 'text', text: finalText })
-
-  } catch (e: any) {
-    const msg = e?.message || String(e)
-    onEvent?.({ type: 'error', message: `Synthesis failed: ${msg}` })
-    finalText = `Error: ${msg}`
-    onEvent?.({ type: 'text', text: finalText })
   }
 
   // Auto-save report if requested
