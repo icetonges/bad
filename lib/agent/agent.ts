@@ -172,5 +172,25 @@ export async function runAgent(
     onEvent?.({ type: 'error', message: `Synthesis failed: ${e?.message || e}` })
   }
 
+  // ── Auto-save report if user asked for one ────────────────────────
+  const wantsReport = /save|report|generate report/i.test(userMessage)
+  if (wantsReport && finalText) {
+    try {
+      const title = userMessage.slice(0, 80).replace(/save.*report.*$/i, '').trim() || 'Analysis report'
+      const saveResult = await executeTool('generate_report', {
+        title,
+        category: ctx.category ?? 'budget',
+        content_markdown: finalText,
+      }, { userId: ctx.userId, sessionId: ctx.sessionId, category: ctx.category })
+      allToolCalls.push({ name: 'generate_report', input: { title, category: ctx.category }, output: saveResult })
+      onEvent?.({ type: 'tool_result', id: 'auto_save', name: 'generate_report', output: saveResult })
+      onEvent?.({ type: 'text', text: '\n\n---\n✅ **Report saved** — find it in the Reports section.' })
+      finalText += '\n\n---\n✅ **Report saved** — find it in the Reports section.'
+    } catch (e) {
+      // Non-fatal — analysis still shown even if save fails
+      console.error('Auto-save failed:', e)
+    }
+  }
+
   return { text: finalText, toolCalls: allToolCalls }
 }
