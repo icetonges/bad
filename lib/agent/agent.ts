@@ -130,6 +130,9 @@ ${skill ? skill.systemPrompt : ''}`
     name: t.name, description: t.description, input_schema: t.input_schema as Record<string, unknown>
   }))
 
+  // Phase 1 only gets search + chart tools. generate_report fires AFTER synthesis with real content.
+  const phase1Tools = tools.filter(t => t.name !== 'generate_report')
+
   const allToolCalls: Array<{ name: string; input: unknown; output: unknown }> = []
   const gatheredPassages: string[] = []
 
@@ -148,7 +151,7 @@ ${skill ? skill.systemPrompt : ''}`
       const res = await generateWithTools({
         system: systemBase,
         messages: simpleMessages,
-        tools,
+        tools: phase1Tools,
         maxTokens: 2000,
         onProviderChange: spec => onEvent?.({ type: 'provider', provider: spec.provider, model: spec.model }),
       })
@@ -165,7 +168,7 @@ ${skill ? skill.systemPrompt : ''}`
 
   if (isExhaustive) {
     // For exhaustive requests, generate a targeted search plan
-    searchQueries = await generateSearchPlan(userMessage, systemBase, tools, onEvent)
+    searchQueries = await generateSearchPlan(userMessage, systemBase, phase1Tools, onEvent)
     onEvent?.({ type: 'status', message: `Running ${searchQueries.length} targeted searches…` })
   } else {
     // Let the model decide what to search via normal tool-call loop
@@ -181,7 +184,7 @@ ${skill ? skill.systemPrompt : ''}`
         response = await generateWithTools({
           system: systemBase,
           messages: planMessages,
-          tools,
+          tools: phase1Tools,
           maxTokens: 500,
           onProviderChange: spec => onEvent?.({ type: 'provider', provider: spec.provider, model: spec.model }),
         })
@@ -308,28 +311,18 @@ Use a DESCRIPTIVE title in generate_report — never the user's raw instruction 
     break
   }
 
-  // Auto-save report if user asked — but only if model didn't already call generate_report
+  // Auto-save report if user asked and synthesis produced real content
   const alreadySaved = allToolCalls.some(tc => tc.name === 'generate_report' && (tc.output as any)?.ok)
-  const wantsReport = /\b(save|save as report|generate report|create report)\b/i.test(userMessage)
+  const wantsReport = /\b(save|report)\b/i.test(userMessage)
 
-  if (wantsReport && !alreadySaved && finalText.length > 200) {
+  if (wantsReport && !alreadySaved && finalText.length > 100) {
     try {
-      // Smart title: take the substantive part of the user request, not the save instruction
-      // e.g. "list all material weaknesses and save as a report" → "All Material Weaknesses — DoD FY2025 Audit"
-      // e.g. "come with a title, save this" → first line of the response
-      let title = userMessage
-        .replace(/\b(save (this |it |the |as |a |the analysis |as a )?report|generate (a |the )?report|create (a |the )?report|and save.*$)\b/gi, '')
-        .replace(/[,\.]+$/, '')
-        .trim()
-
-      // If title is still generic/empty, use first meaningful line of the response
-      if (!title || title.length < 10) {
-        const firstHeading = finalText.match(/^#+\s*(.+)$/m)?.[1]
-        const firstSentence = finalText.replace(/[#*`]/g, '').trim().split(/[.\n]/)[0]
-        title = firstHeading || firstSentence || 'Analysis'
-      }
-
-      title = title.slice(0, 100)
+      // Title: always use the first heading from the response — never parse the user message
+      const h1 = finalText.match(/^#\s+(.+)$/m)?.[1]?.trim()
+      const h2 = finalText.match(/^##\s+(.+)$/m)?.[1]?.trim()
+      const firstBold = finalText.match(/^\*\*(.+?)\*\*/m)?.[1]?.trim()
+      const firstLine = finalText.replace(/[#*`_]/g, '').split('\n').find(l => l.trim().length > 15)?.trim()
+      const title = (h1 || h2 || firstBold || firstLine || 'Analysis').slice(0, 100)
 
       const saved = await executeTool('generate_report', {
         title,
@@ -339,7 +332,7 @@ Use a DESCRIPTIVE title in generate_report — never the user's raw instruction 
 
       allToolCalls.push({ name: 'generate_report', input: { title }, output: saved })
       onEvent?.({ type: 'tool_result', id: 'autosave', name: 'generate_report', output: saved })
-      const note = `\n\n---\n✅ **Report saved:** "${title}" — find it in the Reports section.`
+      const note = `\n\n---\n✅ **Report saved:** "${title}"`
       finalText += note
       onEvent?.({ type: 'text', text: note })
     } catch (e) {
