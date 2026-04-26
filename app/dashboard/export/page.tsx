@@ -119,7 +119,7 @@ export default function ExportPage() {
         ...data.tasChart.map((d: any) => ['TAS Account', d.account, String(d.amount_b), d.account_name]),
         ...data.topAwards.map((d: any) => ['Top Contractor', d.recipient, String(d.amount_m / 1000), `${d.sub_agency} | ${d.award_type}`]),
       ]
-      const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+      const csv = rows.map(r => r.map((c: string) => `"${c}"`).join(',')).join('\n')
       blob(`dod-obligations-${data.summary.label}.csv`, csv, 'text/csv')
       setItemStatus('obligation', 'done')
     } catch { setItemStatus('obligation', 'error') }
