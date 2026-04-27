@@ -92,37 +92,34 @@ async function fetchObjectClass(fy, period) {
 // classification_desc, current_fytd_net_rcpt_outly_amt, prior_fytd_net_rcpt_outly_amt
 // line_code_nbr for filtering — National Defense rows are in Department of Defense section
 async function fetchMTS(fy) {
-  return fetchWithRetry('MTS Table 5 outlays by agency', () =>
+  // No fields param — return all fields so we don't guess wrong names
+  // March (month 03) is mid-FY; use record_date filter for most recent data
+  return fetchWithRetry('MTS Table 5 outlays', () =>
     get(`${TREASURY}/v1/accounting/mts/mts_table_5?` + new URLSearchParams({
-      filter: `record_fiscal_year:eq:${fy},record_calendar_month:eq:09`,
-      sort: '-current_fytd_net_rcpt_outly_amt',
-      'page[size]': '100',
+      filter: `record_fiscal_year:eq:${fy}`,
+      sort: '-record_date',
+      'page[size]': '50',
     }), 30000)
   )
 }
 
-// ── GTAS via FiscalData ────────────────────────────────────────────
-// Correct URL: api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/...
-// Note: v2 not v1 for GTAS. Old api.fiscal.treasury.gov domain is retired.
+// ── GTAS: certified SF-133 ─────────────────────────────────────────
+// GTAS lives on api.fiscal.treasury.gov (OLD domain) — NOT fiscaldata.treasury.gov
+// fiscaldata.treasury.gov returns HTML 404 for gtas_budgetary_resources
+const GTAS_URL = 'https://api.fiscal.treasury.gov/services/api/fiscal_service/v2/accounting/od/gtas_budgetary_resources'
+
 async function fetchGTAS(fy, period) {
   for (let tryFY = fy, tryQ = Math.ceil(period / 3); tryFY >= fy - 2; ) {
-    // Try both v2 (current) and v1 (legacy) paths
-    const urls = [
-      `${TREASURY}/v2/accounting/od/gtas_budgetary_resources`,
-      `${TREASURY}/v1/accounting/od/gtas_budgetary_resources`,
-    ]
-    for (const base of urls) {
-      const params = new URLSearchParams({
-        fields: 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
-        filter: `reporting_fiscal_year:eq:${tryFY},reporting_fiscal_quarter:eq:${tryQ},agency_identifier:eq:${DOD}`,
-        'page[size]': '100', sort: '-obligations_incurred_by_program_object_class_cpe',
-      })
-      const result = await fetchWithRetry(`GTAS FY${tryFY} Q${tryQ} (${base.includes('v2') ? 'v2' : 'v1'})`, () =>
-        get(`${base}?${params}`, 45000)
-      , 1)
-      if (result?.data?.length > 0) return { data: result.data, fy: tryFY, quarter: tryQ }
-    }
-    console.log(`    no GTAS data for FY${tryFY} Q${tryQ}, trying earlier`)
+    const params = new URLSearchParams({
+      filter: `reporting_fiscal_year:eq:${tryFY},reporting_fiscal_quarter:eq:${tryQ},agency_identifier:eq:${DOD}`,
+      'page[size]': '100',
+      sort: '-obligations_incurred_by_program_object_class_cpe',
+    })
+    const result = await fetchWithRetry(`GTAS FY${tryFY} Q${tryQ}`, () =>
+      get(`${GTAS_URL}?${params}`, 60000)
+    , 2)
+    if (result?.data?.length > 0) return { data: result.data, fy: tryFY, quarter: tryQ }
+    console.log(`    no data FY${tryFY} Q${tryQ}`)
     tryQ--; if (tryQ < 1) { tryQ = 4; tryFY-- }
   }
   return null
