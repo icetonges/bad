@@ -15,7 +15,7 @@ interface Summary { fy: number; period: number; label: string; total_ba: number;
 interface MultiYear { year: string; fy: number; budgetary_resources_b: number; obligations_b: number; outlays_b: number; obligation_rate: number; outlay_rate: number }
 interface TasRow { code: string; name: string; fund_type: string; total_ba_b: number; obligations_b: number; outlays_b: number; obligation_rate: number; yoy_delta_b: number; yoy_pct: number }
 interface CategoryRow { category: string; amount_b: number; transactions: number }
-interface ComponentRow { agency: string; full_name: string; ba_b: number; gtas_obl_m: number; discrepancy_m: number }
+interface ComponentRow { agency?: string; name: string; full_name?: string; ba_b?: number; gtas_obl_m?: number; discrepancy_m?: number; obligations_b?: number; outlays_b?: number; award_count?: number }
 interface AwardRow { recipient: string; sub_agency: string; award_type: string; naics: string; amount_m: number }
 interface RawFile { filename: string; content: string; storage_url: string; pulled_at: string }
 
@@ -114,8 +114,8 @@ export default function ObligationDashboard() {
     data.tasChart.filter(r => fundFilter === 'All' || r.fund_type === fundFilter),
     tasSort
   ) : []
-  const filteredComponents = data ? data.subAgencyChart ?? [].filter(r =>
-    !componentFilter || r.full_name.toLowerCase().includes(componentFilter.toLowerCase())
+  const filteredComponents = data ? (data.subAgencyChart ?? []).filter(r =>
+    !componentFilter || r.name.toLowerCase().includes(componentFilter.toLowerCase())
   ) : []
   const sortedAwards = data ? sortTable(data.topAwards, awardSort) : []
 
@@ -383,14 +383,11 @@ export default function ObligationDashboard() {
               {filteredComponents.map((r, i) => (
                 <tr key={i} className="border-b border-border/50 hover:bg-muted/20">
                   <td className="py-1.5 px-3">
-                    <div className="font-medium">{r.agency}</div>
-                    <div className="text-[10px] text-muted-foreground truncate max-w-[200px]" title={r.full_name}>{r.full_name}</div>
+                    <div className="font-medium">{r.name}</div>
                   </td>
-                  <td className="py-1.5 px-3 text-right">{fmtB(r.ba_b)}</td>
-                  <td className="py-1.5 px-3 text-right">{fmtM(r.gtas_obl_m)}</td>
-                  <td className={`py-1.5 px-3 text-right ${Math.abs(r.discrepancy_m) > 1000 ? 'text-gold' : ''}`}>
-                    {r.discrepancy_m !== 0 ? `${r.discrepancy_m > 0 ? '+' : ''}${fmtM(r.discrepancy_m)}` : '—'}
-                  </td>
+                  <td className="py-1.5 px-3 text-right">{r.obligations_b != null ? fmtB(r.obligations_b) : r.ba_b != null ? fmtB(r.ba_b) : '—'}</td>
+                  <td className="py-1.5 px-3 text-right">{r.outlays_b != null ? fmtB(r.outlays_b) : r.gtas_obl_m != null ? fmtM(r.gtas_obl_m) : '—'}</td>
+                  <td className="py-1.5 px-3 text-right">{r.award_count?.toLocaleString() ?? (r.discrepancy_m != null ? fmtM(r.discrepancy_m) : '—')}</td>
                 </tr>
               ))}
             </tbody>
