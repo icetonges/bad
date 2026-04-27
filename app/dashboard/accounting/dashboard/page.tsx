@@ -148,8 +148,8 @@ export default function ObligationDashboard() {
   const categoryConfig = data ? {
     type: 'doughnut',
     data: {
-      labels: data.categoryChart ?? data.objectClassChart ?? [].map(d => d.category),
-      datasets: [{ data: data.categoryChart ?? data.objectClassChart ?? [].map(d => d.amount_b), backgroundColor: COLORS }],
+      labels: ((data.categoryChart ?? data.objectClassChart ?? []) as any[]).map(d => d.category),
+      datasets: [{ data: ((data.categoryChart ?? data.objectClassChart ?? []) as any[]).map(d => d.amount_b), backgroundColor: COLORS }],
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' as const, labels: { color: tc, font: { size: 10 }, boxWidth: 10 } } } },
   } : null
@@ -181,7 +181,7 @@ export default function ObligationDashboard() {
       ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Obligation Rate %', String(d.obligation_rate), String(d.fy)]),
       ...data.tasChart.map(r => ['TAS', r.code, 'Obligations $B', String(r.obligations_b), String(data.summary.fy)]),
       ...data.tasChart.map(r => ['TAS', r.code, 'Fund Type', r.fund_type, String(data.summary.fy)]),
-      ...data.categoryChart ?? data.objectClassChart ?? [].map(c => ['Category', c.category, 'Obligations $B', String(c.amount_b), String(data.summary.fy)]),
+      ...((data.categoryChart ?? data.objectClassChart ?? []) as any[]).map(c => ['Category', c.category, 'Obligations $B', String(c.amount_b), String(data.summary.fy)]),
       ...data.topAwards.map(a => ['Award', a.recipient, 'Amount $M', String(a.amount_m), String(data.summary.fy)]),
     ]
     const csv = rows.map(r => r.map((c: string) => `"${c}"`).join(',')).join('\n')
