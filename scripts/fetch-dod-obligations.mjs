@@ -295,37 +295,68 @@ async function main() {
   if (fedAcct) collected.push('federal_account')
 
   console.log('\n── 3. Object class breakdown ─────────────────────────────')
-  // Correct endpoint: /api/v2/spending/ with type=object_class (spending explorer API)
-  const objClass = await tryPost('spending/object_class', `${USA}/spending/`, {
-    type: 'object_class',
-    filters: { fy: String(fy), quarter: String(Math.ceil(period / 3)) },
-  })
+  // /api/v2/spending/ requires a *published* quarter — try from current backwards
+  let objClass = null
+  for (let tryFY = fy, tryQ = Math.ceil(period / 3); tryFY >= fy - 2; ) {
+    const result = await tryPost(`spending/object_class FY${tryFY}Q${tryQ}`, `${USA}/spending/`, {
+      type: 'object_class',
+      filters: { fy: String(tryFY), quarter: String(tryQ) },
+    })
+    if (result && !result.detail?.includes('do not belong')) { objClass = result; break }
+    // Step back one quarter
+    tryQ -= 1
+    if (tryQ < 1) { tryQ = 4; tryFY -= 1 }
+    if (tryFY < fy - 2) break
+  }
   if (objClass) collected.push('object_class')
 
   console.log('\n── 4. Program activity breakdown ────────────────────────')
-  // Correct endpoint: /api/v2/spending/ with type=program_activity
-  const progActivity = await tryPost('spending/program_activity', `${USA}/spending/`, {
-    type: 'program_activity',
-    filters: {
-      fy: String(fy),
-      quarter: String(Math.ceil(period / 3)),
-      agency: DOD,
-    },
-  })
+  let progActivity = null
+  for (let tryFY = fy, tryQ = Math.ceil(period / 3); tryFY >= fy - 2; ) {
+    const result = await tryPost(`spending/program_activity FY${tryFY}Q${tryQ}`, `${USA}/spending/`, {
+      type: 'program_activity',
+      filters: { fy: String(tryFY), quarter: String(tryQ), agency: DOD },
+    })
+    if (result && !result.detail?.includes('do not belong')) { progActivity = result; break }
+    tryQ -= 1
+    if (tryQ < 1) { tryQ = 4; tryFY -= 1 }
+    if (tryFY < fy - 2) break
+  }
   if (progActivity) collected.push('program_activity')
 
   console.log('\n── 5. Sub-agency breakdown ──────────────────────────────')
   const subAgency = await tryGet('sub_agency', `${USA}/agency/${DOD}/sub_agency/?fiscal_year=${fy}&limit=30`)
   if (subAgency) collected.push('sub_agency')
 
-  console.log('\n── 6. Treasury GTAS (certified SF-133) ─────────────────')
-  const gtas = await tryGet('Treasury GTAS', `${GTAS}/gtas_budgetary_resources?` + new URLSearchParams({
-    fields: 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
-    filter: `reporting_fiscal_year:eq:${fy},reporting_fiscal_quarter:eq:${q},agency_identifier:eq:${DOD}`,
-    limit: '500',
-    offset: '0',
-  }))
-  if (gtas) collected.push('gtas')
+  console.log('\n── 6. Treasury GTAS via FiscalData API ──────────────────')
+  // Use api.fiscaldata.treasury.gov — same data, much faster than gtas endpoint
+  // Fetches in two small pages to avoid timeout
+  let gtas = null
+  try {
+    const params = new URLSearchParams({
+      fields: 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
+      filter: `reporting_fiscal_year:eq:${fy},reporting_fiscal_quarter:eq:${Math.ceil(period/3)},agency_identifier:eq:${DOD}`,
+      'page[size]': '100',
+      'page[number]': '1',
+      sort: '-obligations_incurred_by_program_object_class_cpe',
+    })
+    const url = `https://api.fiscaldata.treasury.gov/services/api/v1/accounting/od/gtas_budgetary_resources?${params}`
+    console.log(`  ✦ FiscalData GTAS FY${fy} Q${Math.ceil(period/3)}`)
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
+    if (r.ok) {
+      const d = await r.json()
+      gtas = { data: d.data ?? [] }
+      console.log(`    ✓ ok — ${gtas.data.length} records`)
+    } else {
+      // Fallback: try prior quarter
+      const q2 = Math.max(1, Math.ceil(period/3) - 1)
+      const params2 = new URLSearchParams({ ...Object.fromEntries(params), filter: `reporting_fiscal_year:eq:${fy},reporting_fiscal_quarter:eq:${q2},agency_identifier:eq:${DOD}` })
+      const r2 = await fetch(`https://api.fiscaldata.treasury.gov/services/api/v1/accounting/od/gtas_budgetary_resources?${params2}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
+      if (r2.ok) { const d2 = await r2.json(); gtas = { data: d2.data ?? [] }; console.log(`    ✓ fallback Q${q2} — ${gtas.data.length} records`) }
+      else { console.warn(`    ✗ HTTP ${r.status}`) }
+    }
+  } catch (e) { console.warn(`    ✗ ${e.message.slice(0, 100)}`) }
+  if (gtas?.data?.length) collected.push('gtas')
 
   console.log('\n── 7. Agency reporting overview ─────────────────────────')
   const reportingOverview = await tryGet('reporting_overview', `${USA}/reporting/agencies/overview/?fiscal_year=${fy}&fiscal_period=${period}&limit=30`)
