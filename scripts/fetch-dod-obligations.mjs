@@ -87,32 +87,42 @@ async function fetchObjectClass(fy, period) {
   return null
 }
 
-// ── MTS Table 5: DoD outlays by agency ────────────────────────────
-// Correct URL: api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/mts/mts_table_5
+// ── MTS Table 5: DoD outlays ───────────────────────────────────────
+// Correct fields from FiscalData GitHub source:
+// classification_desc, current_fytd_net_rcpt_outly_amt, prior_fytd_net_rcpt_outly_amt
+// line_code_nbr for filtering — National Defense rows are in Department of Defense section
 async function fetchMTS(fy) {
-  return fetchWithRetry('MTS Table 5 (DoD outlays by agency)', () =>
+  return fetchWithRetry('MTS Table 5 outlays by agency', () =>
     get(`${TREASURY}/v1/accounting/mts/mts_table_5?` + new URLSearchParams({
-      fields: 'current_fytd_net_outly_amt,prior_fytd_net_outly_amt,line_code_nbr,item_nm,sequence_number_cd',
-      filter: `record_fiscal_year:eq:${fy},sequence_number_cd:eq:7`,  // seq 7 = National Defense
-      sort: '-current_fytd_net_outly_amt',
-      'page[size]': '50',
+      filter: `record_fiscal_year:eq:${fy},record_calendar_month:eq:09`,
+      sort: '-current_fytd_net_rcpt_outly_amt',
+      'page[size]': '100',
     }), 30000)
   )
 }
 
-// ── GTAS: certified SF-133 ─────────────────────────────────────────
-// CORRECT base: api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/...
+// ── GTAS via FiscalData ────────────────────────────────────────────
+// Correct URL: api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/...
+// Note: v2 not v1 for GTAS. Old api.fiscal.treasury.gov domain is retired.
 async function fetchGTAS(fy, period) {
-  // Try quarters from current back until we find data
   for (let tryFY = fy, tryQ = Math.ceil(period / 3); tryFY >= fy - 2; ) {
-    const result = await fetchWithRetry(`GTAS FY${tryFY} Q${tryQ}`, () =>
-      get(`${TREASURY}/v1/accounting/od/gtas_budgetary_resources?` + new URLSearchParams({
+    // Try both v2 (current) and v1 (legacy) paths
+    const urls = [
+      `${TREASURY}/v2/accounting/od/gtas_budgetary_resources`,
+      `${TREASURY}/v1/accounting/od/gtas_budgetary_resources`,
+    ]
+    for (const base of urls) {
+      const params = new URLSearchParams({
         fields: 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
         filter: `reporting_fiscal_year:eq:${tryFY},reporting_fiscal_quarter:eq:${tryQ},agency_identifier:eq:${DOD}`,
         'page[size]': '100', sort: '-obligations_incurred_by_program_object_class_cpe',
-      }), 40000)
-    , 1)
-    if (result?.data?.length > 0) return { data: result.data, fy: tryFY, quarter: tryQ }
+      })
+      const result = await fetchWithRetry(`GTAS FY${tryFY} Q${tryQ} (${base.includes('v2') ? 'v2' : 'v1'})`, () =>
+        get(`${base}?${params}`, 45000)
+      , 1)
+      if (result?.data?.length > 0) return { data: result.data, fy: tryFY, quarter: tryQ }
+    }
+    console.log(`    no GTAS data for FY${tryFY} Q${tryQ}, trying earlier`)
     tryQ--; if (tryQ < 1) { tryQ = 4; tryFY-- }
   }
   return null
@@ -193,13 +203,22 @@ function buildContent({ fy, period, budRes, fedAcct, objClass, subAgency, overvi
 
   // 6. MTS
   if (mts?.data?.length) {
-    lines.push(`## Monthly Treasury Statement (MTS) — National Defense FY${fy}`)
-    lines.push('Source: FiscalData MTS Table 5 (DoD/National Defense outlays, certified monthly)')
-    lines.push(`Correct URL: ${TREASURY}/v1/accounting/mts/mts_table_5`)
-    for (const r of mts.data.slice(0,20)) {
-      const cur = fmtB(r.current_fytd_net_outly_amt)
-      const prior = fmtB(r.prior_fytd_net_outly_amt)
-      lines.push(`- ${r.item_nm}: Current FY ${cur} | Prior FY ${prior}`)
+    lines.push(`## Monthly Treasury Statement — Outlays by Agency FY${fy}`)
+    lines.push('Source: FiscalData MTS Table 5 (certified monthly)')
+    // Filter to DoD/Defense-related rows
+    const defense = mts.data.filter((r: any) =>
+      String(r.classification_desc ?? '').toLowerCase().includes('defense') ||
+      String(r.classification_desc ?? '').toLowerCase().includes('military') ||
+      String(r.classification_desc ?? '').toLowerCase().includes('army') ||
+      String(r.classification_desc ?? '').toLowerCase().includes('navy') ||
+      String(r.classification_desc ?? '').toLowerCase().includes('air force')
+    )
+    const rows = defense.length > 0 ? defense : mts.data.slice(0, 20)
+    for (const r of rows) {
+      const desc = r.classification_desc || r.item_nm || r.agency_nm || 'Unknown'
+      const cur  = r.current_fytd_net_rcpt_outly_amt || r.current_fytd_net_outly_amt || r.current_month_actual || '0'
+      const prior = r.prior_fytd_net_rcpt_outly_amt || r.prior_fytd_net_outly_amt || '0'
+      lines.push(`- ${desc}: Current FY ${fmtB(+cur * 1e6)} | Prior FY ${fmtB(+prior * 1e6)}`)
     }
     lines.push('')
   }
