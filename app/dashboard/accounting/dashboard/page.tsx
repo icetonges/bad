@@ -24,7 +24,11 @@ interface DashData {
   tasChart: TasRow[]; categoryChart: CategoryRow[]
   componentChart: ComponentRow[]; topAwards: AwardRow[]
   rawFile: RawFile | null; availableFiles: Array<{ filename: string; created_at: string; storage_url: string }>
-  pulled_at: string; requestedFY: number; availableFYs: number[]
+  pulled_at: string; filename?: string; source?: string
+  availablePeriods?: Array<{ filename: string; label: string; pulled_at: string }>
+  objectClassChart?: Array<{ code: string; name: string; amount_b: number }>
+  programActivityChart?: Array<{ code: string; name: string; amount_b: number }>
+  subAgencyChart?: Array<{ name: string; obligations_b: number; outlays_b: number }>
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -84,15 +88,15 @@ export default function ObligationDashboard() {
   const tc = dark ? '#9c9a92' : '#73726c'
   const scalBase = { grid: { color: gc }, ticks: { color: tc, font: { size: 11 } } }
 
-  const load = useCallback(async (fy?: number) => {
+  const load = useCallback(async (_fy?: number, period?: string) => {
     setLoading(true); setError(null)
     try {
-      const url = `/api/obligation-dashboard${fy ? `?fy=${fy}` : ''}`
+      const url = `/api/obligation-dashboard${period ? `?period=${period}` : ''}`
       const res = await fetch(url)
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
+      if (!res.ok) throw new Error(json.error || json.hint || 'API error')
       setData(json)
-      if (!selectedFY) setSelectedFY(json.requestedFY)
+      if (!selectedFY && json.availablePeriods?.[0]) setSelectedFY(json.availablePeriods[0].label)
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }, [selectedFY])
@@ -110,7 +114,7 @@ export default function ObligationDashboard() {
     data.tasChart.filter(r => fundFilter === 'All' || r.fund_type === fundFilter),
     tasSort
   ) : []
-  const filteredComponents = data ? data.componentChart.filter(r =>
+  const filteredComponents = data ? data.subAgencyChart ?? [].filter(r =>
     !componentFilter || r.full_name.toLowerCase().includes(componentFilter.toLowerCase())
   ) : []
   const sortedAwards = data ? sortTable(data.topAwards, awardSort) : []
@@ -144,8 +148,8 @@ export default function ObligationDashboard() {
   const categoryConfig = data ? {
     type: 'doughnut',
     data: {
-      labels: data.categoryChart.map(d => d.category),
-      datasets: [{ data: data.categoryChart.map(d => d.amount_b), backgroundColor: COLORS }],
+      labels: data.categoryChart ?? data.objectClassChart ?? [].map(d => d.category),
+      datasets: [{ data: data.categoryChart ?? data.objectClassChart ?? [].map(d => d.amount_b), backgroundColor: COLORS }],
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' as const, labels: { color: tc, font: { size: 10 }, boxWidth: 10 } } } },
   } : null
@@ -175,13 +179,13 @@ export default function ObligationDashboard() {
       ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Obligations $B', String(d.obligations_b), String(d.fy)]),
       ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Outlays $B', String(d.outlays_b), String(d.fy)]),
       ...data.multiYearChart.map(d => ['Multi-Year', d.year, 'Obligation Rate %', String(d.obligation_rate), String(d.fy)]),
-      ...data.tasChart.map(r => ['TAS', r.code, 'Obligations $B', String(r.obligations_b), String(data.requestedFY)]),
-      ...data.tasChart.map(r => ['TAS', r.code, 'Fund Type', r.fund_type, String(data.requestedFY)]),
-      ...data.categoryChart.map(c => ['Category', c.category, 'Obligations $B', String(c.amount_b), String(data.requestedFY)]),
-      ...data.topAwards.map(a => ['Award', a.recipient, 'Amount $M', String(a.amount_m), String(data.requestedFY)]),
+      ...data.tasChart.map(r => ['TAS', r.code, 'Obligations $B', String(r.obligations_b), String(data.summary.fy)]),
+      ...data.tasChart.map(r => ['TAS', r.code, 'Fund Type', r.fund_type, String(data.summary.fy)]),
+      ...data.categoryChart ?? data.objectClassChart ?? [].map(c => ['Category', c.category, 'Obligations $B', String(c.amount_b), String(data.summary.fy)]),
+      ...data.topAwards.map(a => ['Award', a.recipient, 'Amount $M', String(a.amount_m), String(data.summary.fy)]),
     ]
     const csv = rows.map(r => r.map((c: string) => `"${c}"`).join(',')).join('\n')
-    dl(`dod-obligations-FY${data.requestedFY}.csv`, csv, 'text/csv')
+    dl(`dod-obligations-FY${data.summary.fy}.csv`, csv, 'text/csv')
   }
 
   function dl(name: string, content: string, type: string) {
@@ -207,21 +211,25 @@ export default function ObligationDashboard() {
           <p className="text-xs text-muted-foreground mt-0.5">USASpending.gov · {new Date(data.pulled_at).toLocaleString()}</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {/* FY Selector */}
-          <select
-            value={selectedFY ?? data.requestedFY}
-            onChange={e => { const fy = Number(e.target.value); setSelectedFY(fy); load(fy) }}
-            className="text-xs border border-border rounded px-2 py-1.5 bg-background text-foreground"
-          >
-            {data.availableFYs.map(y => <option key={y} value={y}>FY{y}</option>)}
-          </select>
+          {/* Period selector — populated from available DB periods */}
+          {data.availablePeriods && data.availablePeriods.length > 1 && (
+            <select
+              value={selectedFY ?? ''}
+              onChange={e => { setSelectedFY(e.target.value); load(undefined, e.target.value || undefined) }}
+              className="text-xs border border-border rounded px-2 py-1.5 bg-background text-foreground"
+            >
+              {data.availablePeriods.map((p: any) => (
+                <option key={p.filename} value={p.label}>{p.label}</option>
+              ))}
+            </select>
+          )}
           <button onClick={() => load(selectedFY ?? undefined)} className="flex items-center gap-1 text-xs border border-border rounded px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition">
             <RefreshCw className="h-3 w-3" /> Refresh
           </button>
           <button onClick={exportCSV} className="flex items-center gap-1 text-xs border border-border rounded px-2.5 py-1.5 text-muted-foreground hover:text-gold transition">
             <Download className="h-3 w-3" /> CSV
           </button>
-          <Link href={`/dashboard/chat?category=accounting&prompt=${encodeURIComponent(`Provide a comprehensive obligation analysis for FY${data.requestedFY} DoD spending: obligation rate, top funding categories, largest TAS accounts, top contractors, ULO concerns, and execution risks.`)}`}
+          <Link href={`/dashboard/chat?category=accounting&prompt=${encodeURIComponent(`Provide a comprehensive obligation analysis for FY${data.summary.fy} DoD spending: obligation rate, top funding categories, largest TAS accounts, top contractors, ULO concerns, and execution risks.`)}`}
             className="text-xs border border-primary/60 text-gold rounded px-2.5 py-1.5 hover:bg-accent transition">
             Ask agent →
           </Link>
@@ -291,7 +299,7 @@ export default function ObligationDashboard() {
       <div className="rounded-lg border border-border bg-card mb-4">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-wrap gap-2">
           <div>
-            <p className="text-sm font-medium">Federal accounts (TAS) detail — FY{data.requestedFY}</p>
+            <p className="text-sm font-medium">Federal accounts (TAS) detail — FY{data.summary.fy}</p>
             <p className="text-[11px] text-muted-foreground">{filteredTAS.length} accounts · click headers to sort · filter by fund type above</p>
           </div>
           {/* Column visibility toggles */}
@@ -393,7 +401,7 @@ export default function ObligationDashboard() {
       {/* ── Top contractors table ────────────────────────────────── */}
       <div className="rounded-lg border border-border bg-card mb-4">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <p className="text-sm font-medium">Top DoD contractors — FY{data.requestedFY}</p>
+          <p className="text-sm font-medium">Top DoD contractors — FY{data.summary.fy}</p>
           <p className="text-[11px] text-muted-foreground">{sortedAwards.length} awards · click headers to sort</p>
         </div>
         <div className="overflow-x-auto">

@@ -35,14 +35,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { source, dataset, period, filename, content, metadata } = body
 
-    if (!filename || !content) {
+    if (!filename || !content)
       return NextResponse.json({ error: 'filename and content required' }, { status: 400 })
-    }
 
     const workspaceId = body.workspace_id || DEFAULT_WORKSPACE_ID
-    const category = 'accounting' // Obligation data lives under accounting
+    const category = 'accounting'
 
-    // Check if a document with this filename + period already exists (dedup)
+    // Each period gets its own document — never overwrite across periods
+    // Only update if same filename (same period re-run)
     const existing = await sql`
       select id from public.documents
       where workspace_id = ${workspaceId}::uuid
@@ -51,16 +51,22 @@ export async function POST(req: NextRequest) {
       limit 1
     `
 
+    const fullMeta = JSON.stringify({
+      source, dataset, period,
+      auto_ingested: true,
+      pulled_at: new Date().toISOString(),
+      ...(metadata ?? {}),
+    })
+
     let docId: string
 
     if (existing.length > 0) {
-      // Update existing — delete old chunks and re-embed
       docId = (existing[0] as any).id
       await sql`delete from public.chunks where document_id = ${docId}::uuid`
       await sql`
-        update public.documents
-        set metadata = ${JSON.stringify({ source, dataset, period, ...metadata })}::jsonb,
-            created_at = now()
+        update public.documents set
+          metadata = ${fullMeta}::jsonb,
+          created_at = now()
         where id = ${docId}::uuid
       `
     } else {
@@ -80,7 +86,7 @@ export async function POST(req: NextRequest) {
         values (
           ${workspaceId}::uuid, ${category}, ${filename}, 'text/plain',
           ${Buffer.byteLength(content, 'utf8')}, ${storageUrl},
-          ${JSON.stringify({ source, dataset, period, auto_ingested: true, ...metadata })}::jsonb
+          ${fullMeta}::jsonb
         )
         returning id
       `

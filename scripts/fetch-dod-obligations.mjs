@@ -396,13 +396,108 @@ function buildContent({ fy, period, budRes, fedAcct, objClass, progActivity,
   return lines.join('\n')
 }
 
+// ── Structured data for dashboard ──────────────────────────────────
+function buildDashboardData({ fy, period, budRes, fedAcct, objClass, progActivity,
+  subAgency, obsByCategory, finBalances, majorOC, reportingDiff, overview, contracts }) {
+
+  // Multi-year trend
+  const multiYearChart = (budRes?.agency_data_by_year || [])
+    .sort((a, b) => a.fiscal_year - b.fiscal_year)
+    .map(y => ({
+      year: `FY${y.fiscal_year}`,
+      fy: y.fiscal_year,
+      budgetary_resources_b: y.total_budgetary_resources ? +(y.total_budgetary_resources / 1e9).toFixed(1) : null,
+      obligations_b: y.total_obligations ? +(y.total_obligations / 1e9).toFixed(1) : null,
+      outlays_b: y.total_outlays ? +(y.total_outlays / 1e9).toFixed(1) : null,
+      obligation_rate: (y.total_obligations && y.total_budgetary_resources)
+        ? +((y.total_obligations / y.total_budgetary_resources) * 100).toFixed(1) : null,
+    }))
+    .filter(d => d.budgetary_resources_b != null)
+
+  // Summary for current period
+  const t = fedAcct?.totals ?? {}
+  const summary = {
+    fy, period,
+    label: `FY${fy} P${String(period).padStart(2, '0')}`,
+    total_ba: t.total_budgetary_resources ?? null,
+    total_obligations: t.obligated_amount ?? null,
+    total_outlays: t.gross_outlay_amount ?? null,
+    obligation_rate: (t.obligated_amount && t.total_budgetary_resources)
+      ? t.obligated_amount / t.total_budgetary_resources : null,
+    ulo: (t.obligated_amount && t.gross_outlay_amount)
+      ? t.obligated_amount - t.gross_outlay_amount : null,
+  }
+
+  // TAS / federal accounts
+  const tasChart = (fedAcct?.results || []).slice(0, 20).map(r => ({
+    code: r.code,
+    name: r.name,
+    obligations_b: r.obligated_amount ? +(r.obligated_amount / 1e9).toFixed(2) : 0,
+    total_ba_b: r.total_budgetary_resources ? +(r.total_budgetary_resources / 1e9).toFixed(2) : 0,
+    outlays_b: r.gross_outlay_amount ? +(r.gross_outlay_amount / 1e9).toFixed(2) : 0,
+    obligation_rate: (r.obligated_amount && r.total_budgetary_resources)
+      ? +((r.obligated_amount / r.total_budgetary_resources) * 100).toFixed(1) : null,
+  }))
+
+  // Object class
+  const objectClassChart = (objClass?.results || []).map(r => ({
+    code: r.object_class || r.major_object_class || r.code || '',
+    name: r.object_class_name || r.name || '',
+    amount_b: r.obligated_amount ? +(r.obligated_amount / 1e9).toFixed(2) : 0,
+  })).filter(r => r.amount_b > 0)
+
+  // Sub-agency
+  const subAgencyChart = (subAgency?.results || []).slice(0, 15).map(s => ({
+    name: s.name,
+    obligations_b: s.total_obligations ? +(s.total_obligations / 1e9).toFixed(2) : 0,
+    outlays_b: s.total_outlays ? +(s.total_outlays / 1e9).toFixed(2) : 0,
+    award_count: s.award_count || 0,
+  }))
+
+  // Award category
+  const categoryChart = (obsByCategory?.results || []).map(c => ({
+    category: c.category,
+    amount_b: c.aggregated_amount ? +(c.aggregated_amount / 1e9).toFixed(1) : 0,
+    transactions: c.transaction_count || 0,
+  })).filter(c => c.amount_b > 0)
+
+  // Top contractors
+  const topAwards = (contracts?.results || []).map(c => ({
+    recipient: c['Recipient Name'] || 'Unknown',
+    sub_agency: (c['Awarding Sub Agency'] || 'DoD').replace('Department of Defense', 'DoD'),
+    award_type: c['Award Type'] || '',
+    amount_m: c['Award Amount'] ? +(c['Award Amount'] / 1e6).toFixed(0) : 0,
+  })).filter(a => a.amount_m > 0)
+
+  // Program activity top 15
+  const programActivityChart = (progActivity?.results || []).slice(0, 15).map(r => ({
+    code: r.program_activity_code || r.code || '',
+    name: r.program_activity_name || r.name || '',
+    amount_b: r.obligated_amount ? +(r.obligated_amount / 1e9).toFixed(2) : 0,
+  })).filter(r => r.amount_b > 0)
+
+  return {
+    summary, multiYearChart, tasChart, objectClassChart,
+    subAgencyChart, categoryChart, topAwards, programActivityChart,
+    pulled_at: new Date().toISOString(),
+    sources_count: 12,
+  }
+}
+
 // ── Ingest ──────────────────────────────────────────────────────────
-async function ingest(filename, content) {
+async function ingest(filename, content, dashboardData) {
   console.log(`\n  → Ingesting: ${filename} (${content.length.toLocaleString()} chars)`)
   const r = await fetch(INGEST_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${INGEST_SECRET}` },
-    body: JSON.stringify({ source: 'usaspending', dataset: 'dod_obligations', period: filename, filename, content }),
+    body: JSON.stringify({
+      source: 'usaspending',
+      dataset: 'dod_obligations',
+      period: filename,
+      filename,
+      content,
+      metadata: { dashboard_data: dashboardData },  // ← structured JSON for dashboard
+    }),
   })
   const d = await r.json()
   if (!r.ok) throw new Error(d.error || `Ingest HTTP ${r.status}`)
@@ -454,9 +549,10 @@ async function main() {
   console.log(`\n── Summary ─────────────────────────────────────────────`)
   console.log(`Collected ${collected.length}/12 sources: ${collected.join(', ')}`)
 
-  const content  = buildContent({ fy, period, ...results })
-  const filename = `usaspending_dod_obligations_${label}.txt`
-  await ingest(filename, content)
+  const content       = buildContent({ fy, period, ...results })
+  const dashboardData = buildDashboardData({ fy, period, ...results })
+  const filename      = `usaspending_dod_obligations_${label}.txt`
+  await ingest(filename, content, dashboardData)
 
   console.log(`\n✅ Done — ${label} with ${collected.length}/12 sources`)
 }
