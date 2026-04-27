@@ -547,14 +547,102 @@ async function main() {
   }
 
   console.log(`\n── Summary ─────────────────────────────────────────────`)
-  console.log(`Collected ${collected.length}/12 sources: ${collected.join(', ')}`)
+  console.log(`Collected ${collected.length}/12 sources: ${collected.join(', ')}\n`)
 
-  const content       = buildContent({ fy, period, ...results })
-  const dashboardData = buildDashboardData({ fy, period, ...results })
-  const filename      = `usaspending_dod_obligations_${label}.txt`
-  await ingest(filename, content, dashboardData)
+  // ── Individual file per source ──────────────────────────────────
+  const sourceFiles = [
+    ['budRes',        'budgetary_resources',       d => {
+      const lines = [`# DoD Budgetary Resources — ${label}\nSource: /agency/097/budgetary_resources/\n`]
+      for (const y of (d?.agency_data_by_year || []).sort((a,b)=>a.fiscal_year-b.fiscal_year))
+        lines.push(`FY${y.fiscal_year}: BA ${fmtB(y.total_budgetary_resources)} | Obligations ${fmtB(y.total_obligations)} | Outlays ${fmtB(y.total_outlays)} | Rate ${fmtPct(y.total_obligations,y.total_budgetary_resources)}`)
+      return lines.join('\n')
+    }],
+    ['fedAcct',       'federal_account',           d => {
+      const t = d?.totals ?? {}
+      const lines = [`# DoD Federal Accounts (TAS) — ${label}\nSource: /agency/097/federal_account/\nTotal BA: ${fmtB(t.total_budgetary_resources)} | Obligations: ${fmtB(t.obligated_amount)} | Outlays: ${fmtB(t.gross_outlay_amount)} | Rate: ${fmtPct(t.obligated_amount,t.total_budgetary_resources)}\n`]
+      for (const r of (d?.results || []).slice(0,30))
+        lines.push(`- ${r.code} "${r.name}": Obligations ${fmtB(r.obligated_amount)} | BA ${fmtB(r.total_budgetary_resources)} | Rate ${fmtPct(r.obligated_amount,r.total_budgetary_resources)}`)
+      return lines.join('\n')
+    }],
+    ['objClass',      'object_class',              d => {
+      const lines = [`# DoD Object Class — ${label}\nSource: /agency/097/object_class/\nSF-133 object class lines.\n`]
+      for (const r of (d?.results || []))
+        lines.push(`- OC ${r.object_class||r.major_object_class||r.code} ${r.object_class_name||r.name||''}: ${fmtB(r.obligated_amount??r.gross_outlay_amount)}`)
+      return lines.join('\n')
+    }],
+    ['progActivity',  'program_activity',          d => {
+      const lines = [`# DoD Program Activity — ${label}\nSource: /agency/097/program_activity/\nTotal: ${d?.page_metadata?.total ?? '?'} program activities\n`]
+      for (const r of (d?.results || []).slice(0,50))
+        lines.push(`- PA ${r.program_activity_code||r.code} "${r.program_activity_name||r.name}": ${fmtB(r.obligated_amount)}`)
+      return lines.join('\n')
+    }],
+    ['subAgency',     'sub_agency',                d => {
+      const lines = [`# DoD Sub-Agency Breakdown — ${label}\nSource: /agency/097/sub_agency/\n`]
+      for (const r of (d?.results || []))
+        lines.push(`- ${r.name}: Obligations ${fmtB(r.total_obligations)} | Outlays ${fmtB(r.total_outlays)} | Awards ${r.award_count||0}`)
+      return lines.join('\n')
+    }],
+    ['obsByCategory', 'obligations_by_award_category', d => {
+      const lines = [`# DoD Obligations by Award Category — ${label}\nSource: /agency/097/obligations_by_award_category/\n`]
+      for (const c of (d?.results || []))
+        lines.push(`- ${c.category}: ${fmtB(c.aggregated_amount)} | ${(c.transaction_count||0).toLocaleString()} transactions`)
+      return lines.join('\n')
+    }],
+    ['finBalances',   'financial_balances',        d => {
+      const lines = [`# DoD Financial Balances — ${label}\nSource: /financial_balances/agencies/?funding_agency_id=${DOD_AGENCY_ID}\n`]
+      for (const r of (d?.results || []))
+        lines.push(`- BA ${fmtB(r.budget_authority_amount)} | Obligations ${fmtB(r.obligated_amount)} | Unobligated ${fmtB(r.unobligated_amount)}`)
+      return lines.join('\n')
+    }],
+    ['majorOC',       'major_object_class',        d => {
+      const lines = [`# DoD Major Object Class (Financial Spending) — ${label}\nSource: /financial_spending/major_object_class/?funding_agency_id=${DOD_AGENCY_ID}\n`]
+      for (const r of (d?.results || []))
+        lines.push(`- OC ${r.major_object_class||r.object_class}: ${fmtM(r.obligated_amount)}`)
+      return lines.join('\n')
+    }],
+    ['reportingDiff', 'reporting_differences',     d => {
+      const lines = [`# DoD Reporting Differences (SF-133) — ${label}\nSource: /reporting/agencies/097/differences/\nFile A vs File B account reconciliation.\n`]
+      for (const r of (d?.results || []).slice(0,30))
+        lines.push(`- ${r.tas||r.account_number}: File A ${fmtB(r.file_a_obligation)} | File B ${fmtB(r.file_b_obligation)} | Diff ${fmtB(r.difference)}`)
+      return lines.join('\n')
+    }],
+    ['overview',      'reporting_overview',        d => {
+      const lines = [`# DoD Agency Reporting Overview — ${label}\nSource: /reporting/agencies/overview/\n`]
+      for (const a of (d?.results || []).slice(0,20))
+        lines.push(`- ${a.agency_name}: GTAS Obl ${fmtB(a.tas_account_discrepancies_totals?.gtas_obligation_total)} | Diff ${a.obligation_difference != null ? fmtB(Math.abs(a.obligation_difference)) : '—'}`)
+      return lines.join('\n')
+    }],
+    ['spendByAcct',   'spending_by_federal_account', d => {
+      const lines = [`# DoD Spending by Federal Account — ${label}\nSource: /search/spending_by_category/federal_account/\n`]
+      for (const r of (d?.results || []).slice(0,20))
+        lines.push(`- ${r.code||r.id}: ${r.name||''} — ${fmtB(r.aggregated_amount)}`)
+      return lines.join('\n')
+    }],
+    ['contracts',     'top_contracts',             d => {
+      const lines = [`# DoD Top Contract Awards — ${label}\nSource: /search/spending_by_award/\n`]
+      for (const c of (d?.results || []).slice(0,30))
+        lines.push(`- ${c['Recipient Name']||'Unknown'} | ${c['Awarding Sub Agency']||'DoD'} | ${c['Award Type']||''} | ${fmtB(c['Award Amount'])}`)
+      return lines.join('\n')
+    }],
+  ]
 
-  console.log(`\n✅ Done — ${label} with ${collected.length}/12 sources`)
+  let ingested = 0
+  for (const [key, slug, formatter] of sourceFiles) {
+    const data = results[key]
+    if (!data) { console.log(`  ⊘ skipping ${slug} (no data)`); continue }
+    const content  = formatter(data)
+    const filename = `usaspending_dod_097_${slug}_${label}.txt`
+    await ingest(filename, content, null)
+    ingested++
+  }
+
+  // ── Combined summary + dashboard data ─────────────────────────
+  const summaryContent  = buildContent({ fy, period, ...results })
+  const dashboardData   = buildDashboardData({ fy, period, ...results })
+  const summaryFilename = `usaspending_dod_obligations_${label}.txt`
+  await ingest(summaryFilename, summaryContent, dashboardData)
+
+  console.log(`\n✅ Done — ${label}: ${ingested} individual files + 1 summary = ${ingested + 1} total documents`)
 }
 
 main().catch(e => { console.error('\n❌ Fatal:', e.message); process.exit(1) })
