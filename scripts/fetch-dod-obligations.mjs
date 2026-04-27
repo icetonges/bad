@@ -311,13 +311,16 @@ async function main() {
   if (objClass) collected.push('object_class')
 
   console.log('\n── 4. Program activity breakdown ────────────────────────')
+  // spending explorer program_activity requires numeric USASpending agency ID
+  // DoD toptier numeric ID = 126 (not the toptier_code "097")
+  // Also: remove agency filter entirely on fallback — get all fed, then filter locally
   let progActivity = null
   for (let tryFY = fy, tryQ = Math.ceil(period / 3); tryFY >= fy - 2; ) {
     const result = await tryPost(`spending/program_activity FY${tryFY}Q${tryQ}`, `${USA}/spending/`, {
       type: 'program_activity',
-      filters: { fy: String(tryFY), quarter: String(tryQ), agency: DOD },
+      filters: { fy: String(tryFY), quarter: String(tryQ), agency: 126 },
     })
-    if (result && !result.detail?.includes('do not belong')) { progActivity = result; break }
+    if (result && !result.detail) { progActivity = result; break }
     tryQ -= 1
     if (tryQ < 1) { tryQ = 4; tryFY -= 1 }
     if (tryFY < fy - 2) break
@@ -329,33 +332,37 @@ async function main() {
   if (subAgency) collected.push('sub_agency')
 
   console.log('\n── 6. Treasury GTAS via FiscalData API ──────────────────')
-  // Use api.fiscaldata.treasury.gov — same data, much faster than gtas endpoint
-  // Fetches in two small pages to avoid timeout
   let gtas = null
-  try {
-    const params = new URLSearchParams({
-      fields: 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
-      filter: `reporting_fiscal_year:eq:${fy},reporting_fiscal_quarter:eq:${Math.ceil(period/3)},agency_identifier:eq:${DOD}`,
-      'page[size]': '100',
-      'page[number]': '1',
-      sort: '-obligations_incurred_by_program_object_class_cpe',
-    })
-    const url = `https://api.fiscaldata.treasury.gov/services/api/v1/accounting/od/gtas_budgetary_resources?${params}`
-    console.log(`  ✦ FiscalData GTAS FY${fy} Q${Math.ceil(period/3)}`)
-    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
-    if (r.ok) {
-      const d = await r.json()
-      gtas = { data: d.data ?? [] }
-      console.log(`    ✓ ok — ${gtas.data.length} records`)
-    } else {
-      // Fallback: try prior quarter
-      const q2 = Math.max(1, Math.ceil(period/3) - 1)
-      const params2 = new URLSearchParams({ ...Object.fromEntries(params), filter: `reporting_fiscal_year:eq:${fy},reporting_fiscal_quarter:eq:${q2},agency_identifier:eq:${DOD}` })
-      const r2 = await fetch(`https://api.fiscaldata.treasury.gov/services/api/v1/accounting/od/gtas_budgetary_resources?${params2}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
-      if (r2.ok) { const d2 = await r2.json(); gtas = { data: d2.data ?? [] }; console.log(`    ✓ fallback Q${q2} — ${gtas.data.length} records`) }
-      else { console.warn(`    ✗ HTTP ${r.status}`) }
-    }
-  } catch (e) { console.warn(`    ✗ ${e.message.slice(0, 100)}`) }
+  // FY2026 Q2 not published yet — try Q2, Q1, then FY2025 Q4, Q3...
+  const gtasQueue = []
+  for (let tryFY = fy, tryQ = Math.ceil(period / 3); gtasQueue.length < 6; ) {
+    gtasQueue.push({ fy: tryFY, q: tryQ })
+    tryQ--
+    if (tryQ < 1) { tryQ = 4; tryFY-- }
+  }
+  for (const { fy: tFY, q: tQ } of gtasQueue) {
+    try {
+      const params = new URLSearchParams({
+        fields: 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
+        filter: `reporting_fiscal_year:eq:${tFY},reporting_fiscal_quarter:eq:${tQ},agency_identifier:eq:${DOD}`,
+        'page[size]': '100', 'page[number]': '1',
+        sort: '-obligations_incurred_by_program_object_class_cpe',
+      })
+      const url = `https://api.fiscaldata.treasury.gov/services/api/v1/accounting/od/gtas_budgetary_resources?${params}`
+      console.log(`  ✦ FiscalData GTAS FY${tFY} Q${tQ}`)
+      const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
+      if (r.ok) {
+        const d = await r.json()
+        if (d.data?.length > 0) {
+          gtas = { data: d.data, fy: tFY, quarter: tQ }
+          console.log(`    ✓ ok — ${d.data.length} records (FY${tFY} Q${tQ})`)
+          break
+        } else {
+          console.log(`    ✗ no data for FY${tFY} Q${tQ}, trying earlier`)
+        }
+      } else { console.warn(`    ✗ HTTP ${r.status} for FY${tFY} Q${tQ}`) }
+    } catch (e) { console.warn(`    ✗ ${e.message.slice(0, 80)}`) }
+  }
   if (gtas?.data?.length) collected.push('gtas')
 
   console.log('\n── 7. Agency reporting overview ─────────────────────────')
