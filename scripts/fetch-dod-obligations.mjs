@@ -206,7 +206,7 @@ function buildContent({ fy, period, budRes, fedAcct, objClass, subAgency, overvi
     lines.push(`## Monthly Treasury Statement — Outlays by Agency FY${fy}`)
     lines.push('Source: FiscalData MTS Table 5 (certified monthly)')
     // Filter to DoD/Defense-related rows
-    const defense = mts.data.filter((r: any) =>
+    const defense = mts.data.filter((r) =>
       String(r.classification_desc ?? '').toLowerCase().includes('defense') ||
       String(r.classification_desc ?? '').toLowerCase().includes('military') ||
       String(r.classification_desc ?? '').toLowerCase().includes('army') ||
