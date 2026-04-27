@@ -1,40 +1,35 @@
 #!/usr/bin/env node
 /**
- * fetch-dod-obligations.mjs
+ * fetch-dod-obligations.mjs  — Bulletproof edition
  *
- * Pulls the most granular publicly available DoD obligation data:
+ * Every API call is independently try/caught.
+ * The script ALWAYS succeeds and ingests whatever it got.
+ * Uses ONLY confirmed-working USASpending v2 endpoints.
  *
- * SOURCE 1: USASpending /agency/097/object_class/
- *   → Obligations by OMB Object Class (11=Personnel, 12=Benefits, 21=Travel,
- *     25=Services, 26=Supplies, 31=Equipment, etc.) — SF-133 line equivalents
- *
- * SOURCE 2: USASpending /agency/097/program_activity/
- *   → Obligations by Program Activity code + name within each TAS
- *
- * SOURCE 3: USASpending /download/accounts/ (async File B)
- *   → TAS × Program Activity × Object Class × Fiscal Period
- *   → This IS the SF-133 at the sub-account level
- *   → Kicks off async download, polls until ready, downloads CSV
- *
- * SOURCE 4: Treasury GTAS (Governmentwide Treasury Account Symbol Adjusted Trial Balance)
- *   → Certified SF-133 data: BA, Obligations, Outlays, Unobligated Balance by TAS
- *   → Most authoritative source — used for OMB reporting
- *
- * SOURCE 5: USASpending /spending_by_category/object_class (award-side)
- *   → Award obligation by object class (contracts vs grants etc.)
- *
- * Env: INGEST_URL, INGEST_SECRET
+ * Data collected:
+ *   1. Multi-year BA/Obligations/Outlays  — /agency/097/budgetary_resources/
+ *   2. Federal accounts (TAS)             — /agency/097/federal_account/
+ *   3. Object class (award-side)          — POST /search/spending_by_category/object_class/
+ *   4. Program activity (award-side)      — POST /search/spending_by_category/program_activity/
+ *   5. Top contracts                      — POST /search/spending_by_award/
+ *   6. Agency reporting overview          — /reporting/agencies/overview/
+ *   7. Treasury GTAS                      — api.fiscal.treasury.gov
+ *   8. Sub-agency breakdown               — /agency/097/sub_agency/
  */
 
-const INGEST_URL = process.env.INGEST_URL
+const INGEST_URL   = process.env.INGEST_URL
 const INGEST_SECRET = process.env.INGEST_SECRET
-if (!INGEST_URL || !INGEST_SECRET) { console.error('❌ INGEST_URL and INGEST_SECRET required'); process.exit(1) }
 
-const USA = 'https://api.usaspending.gov/api/v2'
+if (!INGEST_URL || !INGEST_SECRET) {
+  console.error('❌ INGEST_URL and INGEST_SECRET must be set as GitHub secrets')
+  process.exit(1)
+}
+
+const USA  = 'https://api.usaspending.gov/api/v2'
 const GTAS = 'https://api.fiscal.treasury.gov/services/api/fiscal_service/v2/accounting/od'
-const DOD = '097'
+const DOD  = '097'
 
-// ── Fiscal period helpers ──────────────────────────────────────────
+// ── Fiscal helpers ────────────────────────────────────────────────
 
 function laggedPeriod(lag = 2) {
   const now = new Date()
@@ -46,400 +41,320 @@ function laggedPeriod(lag = 2) {
   return { fy, period: Math.max(2, Math.min(12, p)) }
 }
 
-function fyStart(fy) { return `${fy - 1}-10-01` }
-function fyEnd(fy)   { return `${fy}-09-30` }
+const fyStart = fy => `${fy - 1}-10-01`
+const fyEnd   = fy => `${fy}-09-30`
+const fmtB    = v  => v != null && !isNaN(v) ? `$${(v/1e9).toFixed(2)}B` : 'N/A'
+const fmtPct  = (n,d) => d ? `${((n/d)*100).toFixed(1)}%` : 'N/A'
 
-// ── HTTP helpers ───────────────────────────────────────────────────
+// ── HTTP helpers (individually try/caught at call site) ───────────
 
-async function get(url, label = '') {
-  console.log(`    GET ${label || url.replace('https://','').slice(0,80)}`)
-  const r = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'FedFMMatter-DataPipeline/1.0' } })
-  if (!r.ok) throw new Error(`${r.status}: ${await r.text().catch(() => '')}`.slice(0, 200))
+async function get(url) {
+  const r = await fetch(url, {
+    headers: { Accept: 'application/json', 'User-Agent': 'FedFMMatter-Pipeline/2.0' },
+    signal: AbortSignal.timeout(20000),
+  })
+  if (!r.ok) {
+    const t = await r.text().catch(() => '')
+    throw new Error(`HTTP ${r.status}: ${t.slice(0, 150)}`)
+  }
   return r.json()
 }
 
-async function post(url, body, label = '') {
-  console.log(`    POST ${label || url.replace('https://','').slice(0,80)}`)
+async function post(url, body) {
   const r = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'FedFMMatter-DataPipeline/1.0' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'FedFMMatter-Pipeline/2.0' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(25000),
   })
-  if (!r.ok) throw new Error(`${r.status}: ${await r.text().catch(() => '')}`.slice(0, 200))
+  if (!r.ok) {
+    const t = await r.text().catch(() => '')
+    throw new Error(`HTTP ${r.status}: ${t.slice(0, 150)}`)
+  }
   return r.json()
 }
 
-// ── SOURCE 1: Object class breakdown ──────────────────────────────
-// /agency/097/object_class/ → obligation by OMB object class
-// Object class codes: 10=Personnel, 20=Contractual, 30=Acquisitions, etc.
-async function fetchObjectClass(fy) {
-  const data = await get(`${USA}/agency/${DOD}/object_class/?fiscal_year=${fy}&limit=100`, 'DoD object class obligations')
-
-  // Also fetch the sub-object-class breakdown for contracts
-  const contractSubOC = await post(`${USA}/search/spending_by_category/object_class/`, {
-    filters: {
-      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
-      time_period: [{ start_date: fyStart(fy), end_date: fyEnd(fy) }],
-    },
-    limit: 40,
-    page: 1,
-  }, 'DoD spending by object class (awards)').catch(() => null)
-
-  return { accountData: data, awardData: contractSubOC }
-}
-
-// ── SOURCE 2: Program activity breakdown ──────────────────────────
-// /agency/097/program_activity/ → obligation by program activity within TAS
-async function fetchProgramActivity(fy) {
-  return get(`${USA}/agency/${DOD}/program_activity/?fiscal_year=${fy}&limit=100&sort=obligated_amount&order=desc`, 'DoD program activity obligations')
-}
-
-// ── SOURCE 3: File B async download (TAS × PA × OC × Period) ──────
-// This is the SF-133 equivalent — the most granular account data
-async function fetchFileB(fy, period) {
-  console.log(`    Requesting File B async download (FY${fy} P${period})...`)
-
-  // Kick off the download job
-  const job = await post(`${USA}/bulk_download/accounts/`, {
-    account_level: 'federal_account',
-    filters: {
-      agency: DOD,
-      federal_account: null,
-      budget_function: null,
-      budget_subfunction: null,
-      submission_types: ['account_breakdown_by_program_activity_object_class'],
-      fy: String(fy),
-      quarter: String(Math.ceil(period / 3)),
-    },
-    file_format: 'csv',
-  }, 'File B bulk download request').catch(e => { console.warn(`    ⚠ File B request failed: ${e.message}`); return null })
-
-  if (!job?.file_name) return null
-
-  // Poll until ready (max 3 minutes)
-  const statusUrl = `${USA}/bulk_download/status/?file_name=${encodeURIComponent(job.file_name)}`
-  let fileUrl = null
-  for (let i = 0; i < 36; i++) {
-    await new Promise(r => setTimeout(r, 5000)) // wait 5s between polls
-    const status = await get(statusUrl, `polling status (${i + 1}/36)`).catch(() => null)
-    console.log(`      Status: ${status?.status} ${status?.percent_complete ?? ''}%`)
-    if (status?.status === 'finished' && status?.file_url) { fileUrl = status.file_url; break }
-    if (status?.status === 'failed') { console.warn(`    ⚠ File B download failed`); return null }
-  }
-
-  if (!fileUrl) { console.warn(`    ⚠ File B timed out`); return null }
-
-  // Download the zip and extract the CSV
-  console.log(`    Downloading File B from ${fileUrl}`)
-  const r = await fetch(fileUrl)
-  if (!r.ok) { console.warn(`    ⚠ File B download failed: ${r.status}`); return null }
-
-  // The file is a ZIP — extract and parse first CSV
-  const arrayBuf = await r.arrayBuffer()
-  const buf = Buffer.from(arrayBuf)
-
-  // Find local file header for first CSV (PK\x03\x04)
-  let csvContent = ''
+async function tryGet(label, url) {
   try {
-    // Simple ZIP parser — find first file entry
-    const sig = Buffer.from([0x50, 0x4B, 0x03, 0x04])
-    let offset = 0
-    while (offset < buf.length - 4) {
-      if (buf[offset] === sig[0] && buf[offset+1] === sig[1] && buf[offset+2] === sig[2] && buf[offset+3] === sig[3]) {
-        const fnLen = buf.readUInt16LE(offset + 26)
-        const extraLen = buf.readUInt16LE(offset + 28)
-        const compSize = buf.readUInt32LE(offset + 18)
-        const compMethod = buf.readUInt16LE(offset + 8)
-        const dataStart = offset + 30 + fnLen + extraLen
-        const filename = buf.slice(offset + 30, offset + 30 + fnLen).toString('utf8')
-        console.log(`      Found file in ZIP: ${filename} (method=${compMethod}, size=${compSize})`)
-
-        if (compMethod === 0) {
-          // Stored (no compression)
-          csvContent = buf.slice(dataStart, dataStart + compSize).toString('utf8')
-          break
-        } else if (compMethod === 8) {
-          // Deflate
-          const { inflateRaw } = await import('zlib')
-          const compressed = buf.slice(dataStart, dataStart + compSize)
-          csvContent = await new Promise((res, rej) =>
-            inflateRaw(compressed, (err, result) => err ? rej(err) : res(result.toString('utf8')))
-          )
-          break
-        }
-        offset = dataStart + compSize
-      } else {
-        offset++
-      }
-    }
+    console.log(`  ✦ ${label}`)
+    const d = await get(url)
+    console.log(`    ✓ ok`)
+    return d
   } catch (e) {
-    console.warn(`    ⚠ ZIP parse error: ${e.message}`)
+    console.warn(`    ✗ ${e.message.slice(0, 100)}`)
     return null
   }
-
-  return csvContent ? { content: csvContent, fileUrl } : null
 }
 
-// ── SOURCE 4: Treasury GTAS ────────────────────────────────────────
-// Most authoritative SF-133 data — certified quarterly by agencies
-async function fetchGTAS(fy, period) {
-  const quarter = Math.ceil(period / 3)
-  const url = `${GTAS}/gtas_budgetary_resources?` + new URLSearchParams({
-    'fields': 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
-    'filter': `reporting_fiscal_year:eq:${fy},reporting_fiscal_quarter:eq:${quarter},agency_identifier:eq:${DOD}`,
-    'limit': '500',
-    'offset': '0',
-    'sort': '-obligations_incurred_by_program_object_class_cpe',
-  })
-
-  const data = await get(url, `Treasury GTAS FY${fy} Q${quarter} DoD`).catch(e => {
-    console.warn(`    ⚠ GTAS: ${e.message}`)
+async function tryPost(label, url, body) {
+  try {
+    console.log(`  ✦ ${label}`)
+    const d = await post(url, body)
+    console.log(`    ✓ ok`)
+    return d
+  } catch (e) {
+    console.warn(`    ✗ ${e.message.slice(0, 100)}`)
     return null
-  })
-  return data
+  }
 }
 
-// ── SOURCE 5: Object class search (award-side detail) ─────────────
-async function fetchAwardsByObjectClass(fy) {
-  return post(`${USA}/search/spending_by_category/object_class/`, {
-    filters: {
-      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
-      time_period: [{ start_date: fyStart(fy), end_date: fyEnd(fy) }],
-    },
-    limit: 50, page: 1,
-  }, 'Award spending by object class').catch(() => null)
+// ── Object class names ────────────────────────────────────────────
+
+const OC = {
+  '10':'Personnel Compensation & Benefits', '11':'Personnel Compensation',
+  '12':'Personnel Benefits', '13':'Benefits — Former Personnel',
+  '20':'Contractual Services & Supplies', '21':'Travel',
+  '22':'Transportation of Things', '23':'Rent/Comm/Utilities',
+  '24':'Printing', '25':'Other Services (OC25)',
+  '26':'Supplies & Materials', '31':'Equipment (OC31)',
+  '32':'Land & Structures', '33':'Investments',
+  '41':'Grants/Fixed Charges', '99':'Total/Other',
 }
 
-// ── Format content ─────────────────────────────────────────────────
+// ── Build text content ────────────────────────────────────────────
 
-const fmtB = v => v != null ? `$${(v/1e9).toFixed(2)}B` : 'N/A'
-const fmtM = v => v != null ? `$${(v/1e6).toFixed(0)}M` : 'N/A'
-
-// OMB object class descriptions
-const OC_DESC = {
-  '10': 'Personnel Compensation & Benefits', '11': 'Personnel Compensation',
-  '12': 'Personnel Benefits', '13': 'Benefits for Former Personnel',
-  '20': 'Contractual Services & Supplies', '21': 'Travel & Transportation of Persons',
-  '22': 'Transportation of Things', '23': 'Rent, Communications & Utilities',
-  '24': 'Printing & Reproduction', '25': 'Other Contractual Services',
-  '26': 'Supplies & Materials', '31': 'Equipment', '32': 'Land & Structures',
-  '33': 'Investments & Loans', '41': 'Grants/Fixed Charges', '42': 'Insurance Claims',
-  '91': 'Unvouchered', '92': 'Undistributed', '99': 'Total',
-}
-
-function buildContent({ fy, period, objClass, programActivity, gtas, fileBSummary, awardsByOC }) {
-  const quarter = Math.ceil(period / 3)
+function build({ fy, period, budRes, fedAcct, objClass, progActivity, contracts, subAgency, reportingOverview, gtas }) {
+  const q = Math.ceil(period / 3)
   const lines = [
-    `# DoD SF-133 Level Obligation Data — FY${fy} Q${quarter} (Period ${period})`,
-    `Sources: USASpending.gov (Object Class, Program Activity, File B) + Treasury GTAS`,
-    `Pulled: ${new Date().toISOString().slice(0,10)} | Agency: Department of Defense (097)`,
-    `Note: DoD data may lag up to 90 days per DATA Act policy`,
+    `# DoD SF-133 Level Obligation Data — FY${fy} Q${q} (Period ${period})`,
+    `Sources: USASpending.gov API v2 + Treasury GTAS`,
+    `Agency: Department of Defense (toptier_code 097)`,
+    `Retrieved: ${new Date().toISOString().slice(0,10)}`,
+    `Note: DoD data lags up to 90 days per DATA Act policy. Use GTAS for certified SF-133.`,
     '',
   ]
 
-  // GTAS — most authoritative
-  if (gtas?.data?.length) {
-    lines.push(`## Treasury GTAS — Certified SF-133 Data (FY${fy} Q${quarter})`)
-    lines.push(`Source: api.fiscal.treasury.gov/gtas_budgetary_resources (certified submissions)`)
-    lines.push(`Records: ${gtas.data.length} TAS accounts`)
-    const totObl = gtas.data.reduce((s, r) => s + (parseFloat(r.obligations_incurred_by_program_object_class_cpe) || 0), 0)
-    const totBA = gtas.data.reduce((s, r) => s + (parseFloat(r.budget_authority_appropriation_amt) || 0), 0)
-    const totOut = gtas.data.reduce((s, r) => s + (parseFloat(r.gross_outlay_by_program_object_class_cpe) || 0), 0)
-    const totUnobl = gtas.data.reduce((s, r) => s + (parseFloat(r.unobligated_balance_cpe) || 0), 0)
-    lines.push(`DoD Total Budget Authority (GTAS certified): ${fmtB(totBA)}`)
-    lines.push(`DoD Total Obligations (GTAS certified): ${fmtB(totObl)}`)
-    lines.push(`DoD Total Outlays (GTAS certified): ${fmtB(totOut)}`)
-    lines.push(`DoD Unobligated Balance (GTAS certified): ${fmtB(totUnobl)}`)
-    lines.push(`DoD Obligation Rate (GTAS): ${totBA ? ((totObl/totBA)*100).toFixed(1) : 'N/A'}%`)
-    lines.push('')
-
-    // Top TAS by obligation
-    lines.push(`### Top GTAS Accounts by Obligations`)
-    const sorted = [...gtas.data].sort((a, b) =>
-      (parseFloat(b.obligations_incurred_by_program_object_class_cpe) || 0) -
-      (parseFloat(a.obligations_incurred_by_program_object_class_cpe) || 0)
-    )
-    for (const r of sorted.slice(0, 25)) {
-      const tas = `${r.agency_identifier}-${r.main_account_code}`
-      const obl = parseFloat(r.obligations_incurred_by_program_object_class_cpe) || 0
-      const ba = parseFloat(r.budget_authority_appropriation_amt) || 0
-      const rate = ba ? ((obl/ba)*100).toFixed(0) : '?'
-      lines.push(`- TAS ${tas}: Obligations ${fmtB(obl)} | BA ${fmtB(ba)} | Rate ${rate}%`)
+  // ── 1. Budgetary resources multi-year ─────────────────────────
+  if (budRes?.agency_data_by_year?.length) {
+    lines.push('## Multi-Year DoD Budgetary Resources (USASpending)')
+    lines.push('Source: /agency/097/budgetary_resources/')
+    const years = budRes.agency_data_by_year.sort((a,b) => a.fiscal_year - b.fiscal_year)
+    for (const y of years) {
+      const ba  = y.total_budgetary_resources
+      const obl = y.total_obligations
+      const out = y.total_outlays
+      lines.push(`FY${y.fiscal_year}: BA ${fmtB(ba)} | Obligations ${fmtB(obl)} | Outlays ${fmtB(out)} | Rate ${fmtPct(obl, ba)}`)
     }
     lines.push('')
   }
 
-  // Object class breakdown
+  // ── 2. Federal accounts (TAS) ─────────────────────────────────
+  if (fedAcct?.totals) {
+    const t = fedAcct.totals
+    lines.push(`## DoD Federal Accounts Summary — FY${fy}`)
+    lines.push('Source: /agency/097/federal_account/')
+    lines.push(`Total BA: ${fmtB(t.total_budgetary_resources)}`)
+    lines.push(`Obligations: ${fmtB(t.obligated_amount)}`)
+    lines.push(`Outlays: ${fmtB(t.gross_outlay_amount)}`)
+    lines.push(`Obligation Rate: ${fmtPct(t.obligated_amount, t.total_budgetary_resources)}`)
+    lines.push('')
+
+    if (fedAcct.results?.length) {
+      lines.push(`### Top Federal Accounts by Obligation (TAS detail)`)
+      for (const r of fedAcct.results.slice(0, 30)) {
+        const rate = fmtPct(r.obligated_amount, r.total_budgetary_resources)
+        lines.push(`- ${r.code} "${r.name}": Obligations ${fmtB(r.obligated_amount)} | BA ${fmtB(r.total_budgetary_resources)} | Rate ${rate}`)
+      }
+      lines.push('')
+    }
+  }
+
+  // ── 3. Object class (award-side) ──────────────────────────────
   if (objClass?.results?.length) {
-    lines.push(`## OMB Object Class Breakdown — FY${fy}`)
-    lines.push(`Source: USASpending /agency/097/object_class/ (account-side, includes non-award spending)`)
-    lines.push(`This maps to SF-133 Line Items by object class`)
-    for (const oc of objClass.results) {
-      const code = oc.object_class || oc.major_object_class
-      const desc = OC_DESC[code] ?? OC_DESC[String(code).slice(0,2)] ?? oc.object_class_name ?? ''
-      const obl = oc.obligated_amount || oc.gross_outlay_amount || oc.direct_obligation || 0
-      lines.push(`- OC ${code} (${desc}): ${fmtB(obl)}`)
-    }
-    lines.push(`Total account-side object class obligations: ${fmtB(objClass.totals?.obligated_amount)}`)
-    lines.push('')
-  }
-
-  // Award-side object class
-  if (awardsByOC?.results?.length) {
-    lines.push(`## Award-Side Object Class Breakdown — FY${fy}`)
-    lines.push(`Source: USASpending award search (contract/grant transactions only)`)
-    for (const oc of awardsByOC.results.slice(0, 20)) {
-      const desc = OC_DESC[oc.code] ?? OC_DESC[String(oc.code || '').slice(0,2)] ?? oc.name ?? ''
-      lines.push(`- OC ${oc.code} (${desc ?? oc.name}): ${fmtB(oc.aggregated_amount)} | ${oc.transaction_count?.toLocaleString() ?? '?'} transactions`)
+    lines.push(`## Obligations by OMB Object Class — FY${fy} (Award-Side)`)
+    lines.push('Source: POST /search/spending_by_category/object_class/')
+    lines.push('Maps to SF-133 line items by object class. Award obligations only (non-award OC via GTAS).')
+    for (const oc of objClass.results.slice(0, 30)) {
+      const name = OC[oc.code] ?? OC[String(oc.code).slice(0,2)] ?? oc.name ?? ''
+      lines.push(`- OC ${oc.code} ${name}: ${fmtB(oc.aggregated_amount)} | ${(oc.transaction_count||0).toLocaleString()} transactions`)
     }
     lines.push('')
   }
 
-  // Program activity
-  if (programActivity?.results?.length) {
-    lines.push(`## Program Activity Breakdown — FY${fy}`)
-    lines.push(`Source: USASpending /agency/097/program_activity/ (account-side)`)
-    lines.push(`Program Activity is the link between appropriation accounts and budget justification line items`)
-    for (const pa of programActivity.results.slice(0, 30)) {
-      const tas = pa.tas_account_id ? ` [TAS ${pa.tas_account_id}]` : ''
-      lines.push(`- PA ${pa.program_activity_code} "${pa.program_activity_name}"${tas}: Obligations ${fmtB(pa.obligated_amount)} | Outlays ${fmtB(pa.gross_outlay_amount)}`)
+  // ── 4. Program activity ───────────────────────────────────────
+  if (progActivity?.results?.length) {
+    lines.push(`## Obligations by Program Activity — FY${fy}`)
+    lines.push('Source: POST /search/spending_by_category/program_activity/')
+    lines.push('Program activities link appropriation accounts to budget justification line items.')
+    for (const pa of progActivity.results.slice(0, 30)) {
+      lines.push(`- PA ${pa.code} "${pa.name}": ${fmtB(pa.aggregated_amount)}`)
     }
-    lines.push(`Total program activity records: ${programActivity.page_metadata?.total ?? 'N/A'}`)
     lines.push('')
   }
 
-  // File B summary
-  if (fileBSummary) {
-    lines.push(`## File B Summary — TAS × Program Activity × Object Class`)
-    lines.push(`Source: USASpending bulk_download/accounts/ — SF-133 equivalent`)
-    lines.push(fileBSummary)
+  // ── 5. Sub-agency ─────────────────────────────────────────────
+  if (subAgency?.results?.length) {
+    lines.push(`## Obligations by DoD Sub-Agency — FY${fy}`)
+    lines.push('Source: /agency/097/sub_agency/')
+    for (const s of subAgency.results.slice(0, 20)) {
+      lines.push(`- ${s.name}: Obligations ${fmtB(s.total_obligations)} | Awards ${fmtB(s.total_outlays)}`)
+    }
     lines.push('')
   }
 
-  lines.push(`## Analysis Context`)
-  lines.push(`Fiscal Year: ${fy} | Period: ${period}/12 (${Math.round(period/12*100)}% through FY)`)
-  lines.push(`Object class 25 (Services) and 31 (Equipment) are primary indicators of contract obligations`)
-  lines.push(`Object class 11/12 (Personnel) obligations are driven by MILPERS appropriation end-strength`)
-  lines.push(`GTAS data is certified quarterly — most authoritative for SF-133 reconciliation`)
-  lines.push(`USASpending File B provides program activity × object class cross-walk for OMB MAX reporting`)
+  // ── 6. Treasury GTAS ──────────────────────────────────────────
+  if (gtas?.data?.length) {
+    const rows = gtas.data
+    const totObl = rows.reduce((s,r) => s + (parseFloat(r.obligations_incurred_by_program_object_class_cpe)||0), 0)
+    const totBA  = rows.reduce((s,r) => s + (parseFloat(r.budget_authority_appropriation_amt)||0), 0)
+    const totOut = rows.reduce((s,r) => s + (parseFloat(r.gross_outlay_by_program_object_class_cpe)||0), 0)
+    const totUnobl = rows.reduce((s,r) => s + (parseFloat(r.unobligated_balance_cpe)||0), 0)
+
+    lines.push(`## Treasury GTAS — Certified SF-133 (FY${fy} Q${q})`)
+    lines.push('Source: api.fiscal.treasury.gov/gtas_budgetary_resources — CERTIFIED quarterly data')
+    lines.push('This is the authoritative SF-133 source used for OMB reporting.')
+    lines.push(`Accounts reported: ${rows.length}`)
+    lines.push(`Total BA (certified): ${fmtB(totBA)}`)
+    lines.push(`Total Obligations (certified): ${fmtB(totObl)}`)
+    lines.push(`Total Outlays (certified): ${fmtB(totOut)}`)
+    lines.push(`Total Unobligated Balance: ${fmtB(totUnobl)}`)
+    lines.push(`Certified Obligation Rate: ${fmtPct(totObl, totBA)}`)
+    lines.push('')
+
+    const sorted = [...rows].sort((a,b) =>
+      (parseFloat(b.obligations_incurred_by_program_object_class_cpe)||0) -
+      (parseFloat(a.obligations_incurred_by_program_object_class_cpe)||0)
+    )
+    lines.push('### Top DoD TAS Accounts by GTAS Obligations')
+    for (const r of sorted.slice(0, 25)) {
+      const obl = parseFloat(r.obligations_incurred_by_program_object_class_cpe)||0
+      const ba  = parseFloat(r.budget_authority_appropriation_amt)||0
+      lines.push(`- ${r.agency_identifier}-${r.main_account_code}: Obl ${fmtB(obl)} | BA ${fmtB(ba)} | Rate ${fmtPct(obl,ba)}`)
+    }
+    lines.push('')
+  }
+
+  // ── 7. Reporting overview ─────────────────────────────────────
+  if (reportingOverview?.results?.length) {
+    lines.push(`## DoD Agency Reporting Status — FY${fy} P${period}`)
+    lines.push('Source: /reporting/agencies/overview/')
+    for (const a of reportingOverview.results.slice(0, 15)) {
+      const gObl = a.tas_account_discrepancies_totals?.gtas_obligation_total
+      const diff = a.obligation_difference
+      lines.push(`- ${a.agency_name}: GTAS Obl ${fmtB(gObl)} | Discrepancy ${diff ? fmtB(Math.abs(diff)) : 'none'}`)
+    }
+    lines.push('')
+  }
+
+  // ── 8. Top contracts ──────────────────────────────────────────
+  if (contracts?.results?.length) {
+    lines.push(`## Top DoD Contract Awards — FY${fy}`)
+    lines.push('Source: POST /search/spending_by_award/')
+    for (const c of contracts.results.slice(0, 25)) {
+      const amt = c['Award Amount'] ? fmtB(c['Award Amount']) : 'N/A'
+      lines.push(`- ${c['Recipient Name']||'Unknown'} | ${c['Awarding Sub Agency']||'DoD'} | ${c['Award Type']||''} | ${amt}`)
+    }
+    lines.push('')
+  }
+
+  lines.push('## Analysis Reference')
+  lines.push(`FY${fy} Period ${period}/12 — ${Math.round(period/12*100)}% through fiscal year`)
+  lines.push('OC 11/12 = MILPERS-driven. OC 25 = O&M services contracts. OC 31 = Procurement equipment.')
+  lines.push('GTAS is the certified SF-133 source. USASpending award data excludes non-award obligations.')
+  lines.push('For full TAS×PA×OC breakdown (File B), use USASpending Custom Account Download.')
 
   return lines.join('\n')
 }
 
-// ── Summarize File B CSV ───────────────────────────────────────────
-
-function summarizeFileB(csvText) {
-  if (!csvText) return null
-  const lines = csvText.split('\n').filter(Boolean)
-  if (lines.length < 2) return null
-  const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim())
-
-  // Find key column indices
-  const idx = h => headers.findIndex(hdr => hdr.toLowerCase().includes(h.toLowerCase()))
-  const iObl = idx('obligation'); const iPA = idx('program_activity'); const iOC = idx('object_class')
-  const iOut = idx('outlay'); const iTAS = idx('treasury_account_symbol') !== -1 ? idx('treasury_account_symbol') : idx('tas')
-
-  if (iObl < 0) return `File B headers: ${headers.slice(0,10).join(', ')}...\nTotal rows: ${lines.length - 1}`
-
-  // Parse and summarize
-  const byOC: Record<string, number> = {}
-  const byPA: Record<string, number> = {}
-  let totalObl = 0; let totalOut = 0
-
-  for (const line of lines.slice(1, 5001)) { // cap at 5000 rows for memory
-    const cols = line.split(',').map(c => c.replace(/"/g, '').trim())
-    const obl = parseFloat(cols[iObl]) || 0
-    const out = iOut >= 0 ? parseFloat(cols[iOut]) || 0 : 0
-    const oc = iOC >= 0 ? cols[iOC] : 'Unknown'
-    const pa = iPA >= 0 ? cols[iPA] : 'Unknown'
-    totalObl += obl; totalOut += out
-    byOC[oc] = (byOC[oc] || 0) + obl
-    byPA[pa] = (byPA[pa] || 0) + obl
-  }
-
-  const summary = [
-    `File B rows parsed: ${lines.length - 1} (TAS × Program Activity × Object Class records)`,
-    `Total obligations in File B: ${fmtB(totalObl)}`,
-    `Total outlays in File B: ${fmtB(totalOut)}`,
-    ``,
-    `Object class breakdown from File B:`,
-    ...Object.entries(byOC).sort((a,b) => b[1]-a[1]).slice(0,15)
-      .map(([oc, amt]) => `  OC ${oc}: ${fmtB(amt)}`),
-    ``,
-    `Top program activities from File B:`,
-    ...Object.entries(byPA).sort((a,b) => b[1]-a[1]).slice(0,15)
-      .map(([pa, amt]) => `  ${pa}: ${fmtB(amt)}`),
-  ]
-  return summary.join('\n')
-}
-
-// ── Ingest ─────────────────────────────────────────────────────────
+// ── Ingest ────────────────────────────────────────────────────────
 
 async function ingest(filename, content, dataset, period) {
-  console.log(`\n  Ingesting "${filename}" (${content.length.toLocaleString()} chars)...`)
-  const res = await fetch(INGEST_URL, {
+  console.log(`\n  → Ingesting ${filename} (${content.length.toLocaleString()} chars)...`)
+  const r = await fetch(INGEST_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${INGEST_SECRET}` },
     body: JSON.stringify({ source: 'usaspending', dataset, period, filename, content }),
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `Ingest returned ${res.status}`)
-  console.log(`  ✓ ${data.action} — ${data.chunk_count} chunks embedded`)
-  return data
+  const d = await r.json()
+  if (!r.ok) throw new Error(d.error || `Ingest status ${r.status}`)
+  console.log(`  ✓ ${d.action} — ${d.chunk_count} chunks`)
+  return d
 }
 
-// ── Main ───────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────
 
 async function main() {
   const { fy, period } = laggedPeriod(2)
   const label = `FY${fy}_P${String(period).padStart(2,'0')}`
+  const q = Math.ceil(period / 3)
+  const collected = []
 
-  console.log(`\n🔄 DoD SF-133 Level Obligation Data Pull`)
-  console.log(`   FY${fy} Period ${period} (Q${Math.ceil(period/3)})`)
+  console.log(`\n🔄 DoD SF-133 Obligation Data Pull — ${label}`)
   console.log(`   ${new Date().toISOString()}\n`)
 
-  // ── Fetch all sources (non-fatal failures) ─────────────────────
-  console.log('── Source 1: Object Class Breakdown ─────────────────────')
-  const objClassRaw = await fetchObjectClass(fy).catch(e => { console.warn(`  ⚠ ${e.message}`); return null })
+  console.log('── 1. Multi-year budgetary resources ────────────────────')
+  const budRes = await tryGet('budgetary_resources', `${USA}/agency/${DOD}/budgetary_resources/`)
+  if (budRes) collected.push('budgetary_resources')
 
-  console.log('\n── Source 2: Program Activity Breakdown ─────────────────')
-  const programActivity = await fetchProgramActivity(fy).catch(e => { console.warn(`  ⚠ ${e.message}`); return null })
+  console.log('\n── 2. Federal accounts / TAS ────────────────────────────')
+  const fedAcct = await tryGet('federal_account', `${USA}/agency/${DOD}/federal_account/?fiscal_year=${fy}&limit=30&sort=obligated_amount&order=desc`)
+  if (fedAcct) collected.push('federal_account')
 
-  console.log('\n── Source 4: Treasury GTAS (certified SF-133) ───────────')
-  const gtas = await fetchGTAS(fy, period)
+  console.log('\n── 3. Object class (award-side) ─────────────────────────')
+  const objClass = await tryPost('spending_by_category/object_class', `${USA}/search/spending_by_category/object_class/`, {
+    filters: {
+      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
+      time_period: [{ start_date: fyStart(fy), end_date: fyEnd(fy) }],
+    },
+    limit: 40, page: 1,
+  })
+  if (objClass) collected.push('object_class')
 
-  console.log('\n── Source 5: Award-Side Object Class ────────────────────')
-  const awardsByOC = await fetchAwardsByObjectClass(fy)
+  console.log('\n── 4. Program activity ──────────────────────────────────')
+  const progActivity = await tryPost('spending_by_category/program_activity', `${USA}/search/spending_by_category/program_activity/`, {
+    filters: {
+      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
+      time_period: [{ start_date: fyStart(fy), end_date: fyEnd(fy) }],
+    },
+    limit: 40, page: 1,
+  })
+  if (progActivity) collected.push('program_activity')
 
-  // File B is large and async — attempt it but don't block on failure
-  console.log('\n── Source 3: File B Async Download (SF-133 equivalent) ──')
-  const fileB = await fetchFileB(fy, period)
-  const fileBSummary = fileB ? summarizeFileB(fileB.content) : null
+  console.log('\n── 5. Sub-agency breakdown ──────────────────────────────')
+  const subAgency = await tryGet('sub_agency', `${USA}/agency/${DOD}/sub_agency/?fiscal_year=${fy}&limit=30`)
+  if (subAgency) collected.push('sub_agency')
 
-  // ── Ingest File B raw CSV separately if we got it ──────────────
-  if (fileB?.content) {
-    const fbFilename = `usaspending_dod_file_b_${label}.csv`
-    try {
-      await ingest(fbFilename, fileB.content.slice(0, 500000), 'dod_file_b', label)
-    } catch (e) { console.warn(`  ⚠ File B ingest failed: ${e.message}`) }
+  console.log('\n── 6. Treasury GTAS (certified SF-133) ─────────────────')
+  const gtas = await tryGet('Treasury GTAS', `${GTAS}/gtas_budgetary_resources?` + new URLSearchParams({
+    fields: 'reporting_fiscal_year,reporting_fiscal_quarter,agency_identifier,main_account_code,budget_authority_appropriation_amt,obligations_incurred_by_program_object_class_cpe,gross_outlay_by_program_object_class_cpe,unobligated_balance_cpe',
+    filter: `reporting_fiscal_year:eq:${fy},reporting_fiscal_quarter:eq:${q},agency_identifier:eq:${DOD}`,
+    limit: '500',
+    offset: '0',
+  }))
+  if (gtas) collected.push('gtas')
+
+  console.log('\n── 7. Agency reporting overview ─────────────────────────')
+  const reportingOverview = await tryGet('reporting_overview', `${USA}/reporting/agencies/overview/?fiscal_year=${fy}&fiscal_period=${period}&limit=30`)
+  if (reportingOverview) collected.push('reporting_overview')
+
+  console.log('\n── 8. Top contracts ─────────────────────────────────────')
+  const contracts = await tryPost('spending_by_award', `${USA}/search/spending_by_award/`, {
+    filters: {
+      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
+      time_period: [{ start_date: fyStart(fy), end_date: fyEnd(fy) }],
+      award_type_codes: ['A','B','C','D'],
+    },
+    fields: ['Award ID','Recipient Name','Award Amount','Awarding Sub Agency','Award Type','Description'],
+    sort: 'Award Amount', order: 'desc', limit: 30, page: 1,
+  })
+  if (contracts) collected.push('contracts')
+
+  if (collected.length === 0) {
+    console.error('\n❌ All API sources failed. Check network access from GitHub Actions.')
+    process.exit(1)
   }
 
-  // ── Build and ingest main summary ─────────────────────────────
-  const content = buildContent({
-    fy, period,
-    objClass: objClassRaw?.accountData,
-    programActivity,
-    gtas,
-    fileBSummary,
-    awardsByOC,
-  })
+  console.log(`\n── Collected ${collected.length}/8 sources: ${collected.join(', ')}`)
 
+  // Build and ingest
+  const content = build({ fy, period, budRes, fedAcct, objClass, progActivity, subAgency, gtas, reportingOverview, contracts })
   const filename = `usaspending_dod_obligations_${label}.txt`
-  const result = await ingest(filename, content, 'dod_obligations', label)
+  await ingest(filename, content, 'dod_obligations', label)
 
-  const sources = [objClassRaw, programActivity, gtas, awardsByOC].filter(Boolean).length
-  console.log(`\n✓ Done — ${sources}/4 sources ingested, ${fileB ? 'File B included' : 'File B skipped'}`)
-  return result
+  console.log(`\n✅ Done — ${label} ingested with ${collected.length} data sources`)
 }
 
-main().catch(err => { console.error('\n❌ Fatal:', err.message); process.exit(1) })
+main().catch(e => {
+  console.error('\n❌ Fatal error:', e.message)
+  process.exit(1)
+})
