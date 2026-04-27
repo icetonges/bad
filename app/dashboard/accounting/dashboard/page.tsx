@@ -383,11 +383,11 @@ export default function ObligationDashboard() {
               {filteredComponents.map((r, i) => (
                 <tr key={i} className="border-b border-border/50 hover:bg-muted/20">
                   <td className="py-1.5 px-3">
-                    <div className="font-medium">{r.name}</div>
+                    <div className="font-medium">{(r as any).name}</div>
                   </td>
-                  <td className="py-1.5 px-3 text-right">{r.obligations_b != null ? fmtB(r.obligations_b) : r.ba_b != null ? fmtB(r.ba_b) : '—'}</td>
-                  <td className="py-1.5 px-3 text-right">{r.outlays_b != null ? fmtB(r.outlays_b) : r.gtas_obl_m != null ? fmtM(r.gtas_obl_m) : '—'}</td>
-                  <td className="py-1.5 px-3 text-right">{r.award_count?.toLocaleString() ?? (r.discrepancy_m != null ? fmtM(r.discrepancy_m) : '—')}</td>
+                  <td className="py-1.5 px-3 text-right">{(r as any).obligations_b != null ? fmtB((r as any).obligations_b) : (r as any).ba_b != null ? fmtB((r as any).ba_b) : '—'}</td>
+                  <td className="py-1.5 px-3 text-right">{(r as any).outlays_b != null ? fmtB((r as any).outlays_b) : (r as any).gtas_obl_m != null ? fmtM((r as any).gtas_obl_m) : '—'}</td>
+                  <td className="py-1.5 px-3 text-right">{(r as any).award_count?.toLocaleString() ?? ((r as any).discrepancy_m != null ? fmtM((r as any).discrepancy_m) : '—')}</td>
                 </tr>
               ))}
             </tbody>
