@@ -74,7 +74,7 @@ export default function ObligationDashboard() {
   const [data, setData] = useState<DashData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedFY, setSelectedFY] = useState<number | null>(null)
+  const [selectedFY, setSelectedFY] = useState<string | null>(null)
   const [fundFilter, setFundFilter] = useState<string>('All')
   const [componentFilter, setComponentFilter] = useState('')
   const [tasSort, setTasSort] = useState({ col: 'obligations_b', asc: false })
@@ -223,7 +223,7 @@ export default function ObligationDashboard() {
               ))}
             </select>
           )}
-          <button onClick={() => load(selectedFY ?? undefined)} className="flex items-center gap-1 text-xs border border-border rounded px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition">
+          <button onClick={() => load(undefined, selectedFY ?? undefined)} className="flex items-center gap-1 text-xs border border-border rounded px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition">
             <RefreshCw className="h-3 w-3" /> Refresh
           </button>
           <button onClick={exportCSV} className="flex items-center gap-1 text-xs border border-border rounded px-2.5 py-1.5 text-muted-foreground hover:text-gold transition">
