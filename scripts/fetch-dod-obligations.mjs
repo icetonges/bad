@@ -51,7 +51,7 @@ const fmtPct  = (n,d) => d ? `${((n/d)*100).toFixed(1)}%` : 'N/A'
 async function get(url) {
   const r = await fetch(url, {
     headers: { Accept: 'application/json', 'User-Agent': 'FedFMMatter-Pipeline/2.0' },
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(45000),
   })
   if (!r.ok) {
     const t = await r.text().catch(() => '')
@@ -159,25 +159,29 @@ function build({ fy, period, budRes, fedAcct, objClass, progActivity, contracts,
     }
   }
 
-  // ── 3. Object class (award-side) ──────────────────────────────
+  // ── 3. Object class ───────────────────────────────────────────
   if (objClass?.results?.length) {
-    lines.push(`## Obligations by OMB Object Class — FY${fy} (Award-Side)`)
-    lines.push('Source: POST /search/spending_by_category/object_class/')
-    lines.push('Maps to SF-133 line items by object class. Award obligations only (non-award OC via GTAS).')
+    lines.push(`## Obligations by OMB Object Class — FY${fy} Q${q}`)
+    lines.push('Source: /api/v2/spending/?type=object_class (spending explorer)')
+    lines.push('Direct map to SF-133 object class lines.')
     for (const oc of objClass.results.slice(0, 30)) {
-      const name = OC[oc.code] ?? OC[String(oc.code).slice(0,2)] ?? oc.name ?? ''
-      lines.push(`- OC ${oc.code} ${name}: ${fmtB(oc.aggregated_amount)} | ${(oc.transaction_count||0).toLocaleString()} transactions`)
+      const name = oc.name || oc.common_name || ''
+      const code = oc.code || ''
+      const amt  = oc.amount ?? oc.aggregated_amount ?? 0
+      lines.push(`- OC ${code} ${name}: ${fmtB(amt)}`)
     }
     lines.push('')
   }
 
   // ── 4. Program activity ───────────────────────────────────────
   if (progActivity?.results?.length) {
-    lines.push(`## Obligations by Program Activity — FY${fy}`)
-    lines.push('Source: POST /search/spending_by_category/program_activity/')
-    lines.push('Program activities link appropriation accounts to budget justification line items.')
+    lines.push(`## Obligations by Program Activity — FY${fy} Q${q}`)
+    lines.push('Source: /api/v2/spending/?type=program_activity')
     for (const pa of progActivity.results.slice(0, 30)) {
-      lines.push(`- PA ${pa.code} "${pa.name}": ${fmtB(pa.aggregated_amount)}`)
+      const name = pa.name || pa.program_activity_name || ''
+      const code = pa.code || pa.program_activity_code || ''
+      const amt  = pa.amount ?? pa.aggregated_amount ?? 0
+      lines.push(`- PA ${code} "${name}": ${fmtB(amt)}`)
     }
     lines.push('')
   }
@@ -290,23 +294,23 @@ async function main() {
   const fedAcct = await tryGet('federal_account', `${USA}/agency/${DOD}/federal_account/?fiscal_year=${fy}&limit=30&sort=obligated_amount&order=desc`)
   if (fedAcct) collected.push('federal_account')
 
-  console.log('\n── 3. Object class (award-side) ─────────────────────────')
-  const objClass = await tryPost('spending_by_category/object_class', `${USA}/search/spending_by_category/object_class/`, {
-    filters: {
-      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
-      time_period: [{ start_date: fyStart(fy), end_date: fyEnd(fy) }],
-    },
-    limit: 40, page: 1,
+  console.log('\n── 3. Object class breakdown ─────────────────────────────')
+  // Correct endpoint: /api/v2/spending/ with type=object_class (spending explorer API)
+  const objClass = await tryPost('spending/object_class', `${USA}/spending/`, {
+    type: 'object_class',
+    filters: { fy: String(fy), quarter: String(Math.ceil(period / 3)) },
   })
   if (objClass) collected.push('object_class')
 
-  console.log('\n── 4. Program activity ──────────────────────────────────')
-  const progActivity = await tryPost('spending_by_category/program_activity', `${USA}/search/spending_by_category/program_activity/`, {
+  console.log('\n── 4. Program activity breakdown ────────────────────────')
+  // Correct endpoint: /api/v2/spending/ with type=program_activity
+  const progActivity = await tryPost('spending/program_activity', `${USA}/spending/`, {
+    type: 'program_activity',
     filters: {
-      agencies: [{ type: 'awarding', tier: 'toptier', name: 'Department of Defense' }],
-      time_period: [{ start_date: fyStart(fy), end_date: fyEnd(fy) }],
+      fy: String(fy),
+      quarter: String(Math.ceil(period / 3)),
+      agency: DOD,
     },
-    limit: 40, page: 1,
   })
   if (progActivity) collected.push('program_activity')
 

@@ -76,35 +76,35 @@ export async function GET(req: NextRequest) {
     const multiYearChart = years.map((y, i) => {
       const d = multiYearRaw[i].status === 'fulfilled' ? multiYearRaw[i].value : null
       const t = d?.totals ?? {}
-      const ba = t.total_budgetary_resources ?? null
-      const obl = t.obligated_amount ?? null
+      const ba  = t.total_budgetary_resources ?? null
+      const obl = t.obligated_amount ?? null   // correct field
       const out = t.gross_outlay_amount ?? null
       return {
-        year: `FY${y}`,
-        fy: y,
-        budgetary_resources_b: ba ? +(ba / 1e9).toFixed(1) : null,
-        obligations_b: obl ? +(obl / 1e9).toFixed(1) : null,
-        outlays_b: out ? +(out / 1e9).toFixed(1) : null,
+        year: `FY${y}`, fy: y,
+        budgetary_resources_b: ba  ? +(ba  / 1e9).toFixed(1) : null,
+        obligations_b:         obl ? +(obl / 1e9).toFixed(1) : null,
+        outlays_b:             out ? +(out / 1e9).toFixed(1) : null,
         obligation_rate: ba && obl ? +((obl / ba) * 100).toFixed(1) : null,
-        outlay_rate: ba && out ? +((out / ba) * 100).toFixed(1) : null,
+        outlay_rate:     ba && out ? +((out / ba) * 100).toFixed(1) : null,
       }
     }).filter(d => d.budgetary_resources_b != null)
 
     // ── Current FY summary ─────────────────────────────────────────
     const totals = tas?.totals ?? {}
-    const ba = totals.total_budgetary_resources ?? null
+    // federal_account endpoint uses obligated_amount (not total_obligations)
+    const ba  = totals.total_budgetary_resources ?? null
     const obl = totals.obligated_amount ?? null
     const out = totals.gross_outlay_amount ?? null
     const summary = {
       fy: requestedFY,
       period,
       label: `FY${requestedFY} P${String(period).padStart(2, '0')}`,
-      total_ba: ba,
+      total_ba:          ba,
       total_obligations: obl,
-      total_outlays: out,
-      obligation_rate: ba && obl ? obl / ba : null,
-      outlay_rate: ba && out ? out / ba : null,
-      ulo: obl && out ? obl - out : null,
+      total_outlays:     out,
+      obligation_rate:   ba && obl ? obl / ba : null,
+      outlay_rate:       ba && out ? out / ba : null,
+      ulo:               obl && out ? obl - out : null,
     }
 
     // ── TAS breakdown ──────────────────────────────────────────────
