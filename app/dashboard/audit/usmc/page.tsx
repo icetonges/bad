@@ -11,15 +11,18 @@ import { USMCTimelineDiagram, EvidenceVsRemediationDiagram } from '@/components/
 import {
   USMC_TOPLINE, USMC_TIMELINE, USMC_MATERIAL_WEAKNESSES, USMC_NONCOMPLIANCE,
   USMC_WINS, DOD_RECOMMENDATIONS, USMC_INFORMED_RISKS, LIKELIHOOD_ASSESSMENT,
-  INTERFACE_CHOKEPOINT, CRITICALITY_HIERARCHY,
+  INTERFACE_CHOKEPOINT, CRITICALITY_HIERARCHY, RECENT_DEVELOPMENTS,
+  ADVANA_OMISSION_FINDING, INTERFACE_MONITORING_GAP,
 } from '@/components/features/audit-usmc/data'
 
 const SECTIONS = [
+  { id: 'updates',         label: 'Updates since publication' },
   { id: 'overview',        label: 'Executive overview' },
   { id: 'timeline',        label: 'The timeline' },
   { id: 'paradox',         label: 'The central paradox' },
   { id: 'seven-mws',       label: 'The 7 material weaknesses' },
   { id: 'what-worked',     label: 'What mattered most — ranked' },
+  { id: 'interface-gap',   label: 'Is DoD-wide interface monitoring real?' },
   { id: 'noncompliance',   label: 'Noncompliance, unresolved' },
   { id: 'scale-reality',   label: 'The scaling reality' },
   { id: 'recommendations', label: 'DoD-wide recommendations' },
@@ -87,32 +90,65 @@ export default function USMCAuditSuccessPage() {
               USMC's FY2025 audit success — what it actually proves, and what it doesn't
             </h1>
             <p className="text-base text-muted-foreground leading-relaxed mb-6 max-w-3xl">
-              The Marine Corps just did something no other Military Department has done: sustained a second consecutive unmodified audit opinion. But EY's FY2025 report also shows all seven FY2024 material weaknesses carried forward unchanged — zero new, zero resolved. That combination is the most important data point in this report. It means a clean opinion and a fully remediated control environment are two different achievements on two different timelines, and DoD's FY2028 planning needs to treat them that way.
+              The Marine Corps just did something no other Military Department has done: sustained a <strong className="text-foreground">third consecutive</strong> unmodified audit opinion (FY2023, FY2024, FY2025). But EY's FY2025 report also shows all seven original material weaknesses carried forward unchanged — zero new, zero resolved. That combination is the most important data point in this report. It means a clean opinion and a fully remediated control environment are two different achievements on two different timelines, and DoD's FY2028 planning needs to treat them that way.
             </p>
             <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
               <span>DODIG-2026-050 · Feb 6, 2026</span>
               <span aria-hidden>·</span>
               <span>FY 2025 USMC Agency Financial Report · Published Feb 9, 2026</span>
+              <span aria-hidden>·</span>
+              <span className="text-gold">Updated Jul 2026 with post-publication developments</span>
             </div>
           </div>
         </section>
 
+        {/* 0. Updates since publication */}
+        <Section id="updates" title="Updates since publication">
+          <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-3xl">
+            This page was originally built from the FY2025 USMC AFR and DODIG-2026-050, both dated early February 2026. Checked against current reporting as of July 2026, one correction and several real developments are worth surfacing.
+          </p>
+
+          <Callout tone="coral" title="Correction: this is USMC's third consecutive clean opinion, not its second">
+            USMC's own Feb 11, 2026 press release, and independent coverage from Military Times, Washington Times, and Seapower, confirm FY2025 is the Marine Corps' <strong className="text-foreground">third</strong> straight unmodified opinion — FY2023 was first, FY2024 second. This page originally treated FY2024 as the breakthrough year; the actual streak started a year earlier and is a year longer, which makes the "durability" argument in this report stronger, not weaker.
+          </Callout>
+
+          <div className="space-y-3 mt-6">
+            {RECENT_DEVELOPMENTS.map((d, i) => (
+              <div key={i} className="rounded-md border border-border bg-card p-4">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="text-[10px] font-mono text-muted-foreground">{d.date}</span>
+                  <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                    d.significance === 'high' ? 'text-gold border-primary/60' : 'text-muted-foreground border-border'
+                  }`}>{d.significance} significance</span>
+                </div>
+                <div className="font-medium text-sm mb-1">{d.headline}</div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-1.5">{d.detail}</p>
+                <p className="text-[10px] text-muted-foreground/80">Source: {d.source}</p>
+              </div>
+            ))}
+          </div>
+
+          <Callout tone="gold" title="The single biggest development: DoD says it's now running the USMC playbook DoD-wide">
+            The March 24, 2026 announcement replacing 28 separate Component audits with one unified DoD-wide audit — explicitly modeled on USMC's approach — is the clearest sign yet that this page's original recommendations (name a next domino, standardize the interface/governance playbook, sequence deliberately) reflect the direction DoD actually chose. Whether execution matches the announcement is a separate question, taken up in the sections below.
+          </Callout>
+        </Section>
+
         {/* 1. Executive overview */}
         <Section id="overview" title="Executive overview">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-            <Metric big="2" label="Consecutive clean opinions" sub="FY2024 (first), FY2025 (sustained)" />
+            <Metric big="3" label="Consecutive clean opinions" sub="FY2023, FY2024, FY2025 — confirmed Feb 2026" />
             <Metric big="7" label="Material weaknesses" sub="0 new · 0 resolved in FY25" />
             <Metric big="0" label="Significant deficiencies" sub="2 instances of noncompliance remain" />
             <Metric big="$52B" label="Total assets audited" sub={`$${USMC_TOPLINE.gppeNetB}B GPP&E, $${USMC_TOPLINE.totalAppropriationsB}B appropriations`} />
           </div>
 
           <Callout tone="gold" title="The headline most coverage will miss">
-            An unmodified audit opinion is not a certification that internal controls are effective — it's a certification that the financial statements are fairly presented, in all material respects, based on sufficient audit evidence. USMC proves those can diverge for years at a time. Seven material weaknesses, zero significant deficiencies, two live instances of federal-law noncompliance (FFMIA, FMFIA) — and still, for the second year running, a clean opinion.
+            An unmodified audit opinion is not a certification that internal controls are effective — it's a certification that the financial statements are fairly presented, in all material respects, based on sufficient audit evidence. USMC proves those can diverge for years at a time. Seven material weaknesses, zero significant deficiencies, two live instances of federal-law noncompliance (FFMIA, FMFIA) — and still, for the third year running, a clean opinion.
           </Callout>
 
           <h3 className="font-medium text-base mt-8 mb-3">Seven bottom-line takeaways</h3>
           <ol className="space-y-3 text-sm text-muted-foreground leading-relaxed">
-            <li><span className="text-gold font-medium mr-2">01</span> <strong className="text-foreground">The FY2025 result is more informative than the FY2024 first.</strong> Any organization can get lucky once. Sustaining the opinion a second year, with the auditor citing the exact same seven weaknesses, is evidence the underlying audit-evidence discipline is real and repeatable — not a one-time push.</li>
+            <li><span className="text-gold font-medium mr-2">01</span> <strong className="text-foreground">The FY2025 result is more informative than the FY2023 first.</strong> Any organization can get lucky once. Sustaining the opinion for a third straight year, with the auditor citing the exact same seven weaknesses, is evidence the underlying audit-evidence discipline is real and repeatable — not a one-time push.</li>
             <li><span className="text-gold font-medium mr-2">02</span> <strong className="text-foreground">Zero material weaknesses were resolved.</strong> Table 1 of the AFR shows a beginning balance of 7, zero new, zero resolved, ending balance of 7. USMC did not out-fix its problems — it out-evidenced them.</li>
             <li><span className="text-gold font-medium mr-2">03</span> <strong className="text-foreground">The compensating-control strategy is explicit and load-bearing.</strong> $5.5B of Military Equipment and $3.0B of construction-in-progress are tracked in Excel workbooks, not systems of record — the auditor calls this out as inherent risk in the very same report that gives USMC a clean opinion.</li>
             <li><span className="text-gold font-medium mr-2">04</span> <strong className="text-foreground">Governance and interface ownership are the most portable wins.</strong> A Commandant-signed RMIC order, a standing Systems and Data Integration division, and a permanent DAI Interface Team with full visibility into all 27 incoming interfaces — these are staffing and process decisions, not multi-year IT programs.</li>
@@ -125,7 +161,7 @@ export default function USMCAuditSuccessPage() {
         {/* 2. Timeline */}
         <Section id="timeline" title="The timeline — from disclaimer to sustained clean opinion">
           <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-3xl">
-            USMC spent years under the same disclaimer regime as every other Service before breaking through in FY2024. What makes FY2025 the more compelling data point is what <em>didn't</em> change underneath the opinion.
+            USMC spent years under the same disclaimer regime as every other Service before breaking through in FY2023. What makes FY2025 the more compelling data point is what <em>didn't</em> change underneath the opinion, three years in.
           </p>
           <div className="rounded-lg border border-border bg-card p-4 md:p-6 mb-8">
             <USMCTimelineDiagram />
@@ -302,6 +338,44 @@ export default function USMCAuditSuccessPage() {
           </div>
         </Section>
 
+        {/* 5.5 Interface monitoring gap — honest assessment */}
+        <Section id="interface-gap" title="Is DoD-wide interface monitoring actually real? An honest assessment">
+          <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-3xl">
+            If interface monitoring is genuinely the highest-leverage tactical fix in USMC's playbook — and the tier analysis above argues it is — the obvious next question is whether the DoD-wide platform (Advana for Financial Management, soon War Data Platform) actually does the same thing at scale. Having checked what's publicly disclosed, the honest answer is: <strong className="text-foreground">we can't confirm that it does.</strong>
+          </p>
+
+          <Callout tone="coral" title={ADVANA_OMISSION_FINDING.headline}>
+            {ADVANA_OMISSION_FINDING.detail}
+          </Callout>
+
+          <div className="grid md:grid-cols-2 gap-4 mt-6">
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h3 className="font-medium text-sm mb-3">Why this looks like a real gap</h3>
+              <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                {INTERFACE_MONITORING_GAP.evidenceFor.map((e, i) => (
+                  <li key={i} className="flex gap-1.5"><span className="text-destructive mt-0.5">·</span><span>{e}</span></li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h3 className="font-medium text-sm mb-3">Why it might not be — the case for the benefit of the doubt</h3>
+              <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                {INTERFACE_MONITORING_GAP.evidenceAgainst.map((e, i) => (
+                  <li key={i} className="flex gap-1.5"><span className="text-green-600 mt-0.5">·</span><span>{e}</span></li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <Callout tone="gold" title="Verdict">
+            {INTERFACE_MONITORING_GAP.verdict}
+          </Callout>
+
+          <p className="text-xs text-muted-foreground leading-relaxed mt-4 max-w-3xl">
+            Concretely: USMC's Error Handling Framework and Automated Interface Report give it real-time visibility into whether each of its 27 incoming interfaces is active, and a formal guide for triaging failures the moment they occur. Nothing in Advana's public capability set, the January 2026 Feinberg memo, the March 2026 single-audit announcement, or the May 2026 AI-ingestion strategy describes an equivalent — active/inactive interface status, error logs, or job-failure files being ingested and monitored across Army, Navy, and Air Force systems the way GCSS-MC does for USMC alone. Bulk transaction ingestion (the "full universe of transactions" goal) is necessary but is not the same control as interface-level error monitoring, and conflating the two would be a mistake DoD can't afford given how much of USMC's success actually traces back to the narrower, more specific capability.
+          </p>
+        </Section>
+
         {/* 6. Noncompliance */}
         <Section id="noncompliance" title="Noncompliance that remains open, opinion notwithstanding">
           <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-3xl">
@@ -442,6 +516,26 @@ export default function USMCAuditSuccessPage() {
               href="https://fasab.gov/accounting-standards/"
               title="FASAB Handbook — SFFAS 3, 6, 48, 59"
               note="Accounting standards cited in the GPP&E, OM&S, and land-reporting sections of the USMC AFR."
+            />
+            <SourceLink
+              href="https://www.marines.mil/News/Press-Releases/Press-Release-Display/Article/4402085/marine-corps-passes-fy25-financial-audit/"
+              title="Marine Corps Passes FY25 Financial Audit (marines.mil, Feb 11, 2026)"
+              note="Official confirmation of the third consecutive clean opinion, with Commandant Gen. Eric M. Smith's statement."
+            />
+            <SourceLink
+              href="https://www.war.gov/News/Releases/Release/Article/4441578/dow-comptroller-and-ig-announce-refined-approach-to-achieve-fy28-clean-audit-ob/"
+              title="DoW Comptroller and IG Announce Refined Approach to FY28 Clean Audit (war.gov, Mar 24, 2026)"
+              note="The single, unified DoD-wide audit approach explicitly modeled on USMC's strategy."
+            />
+            <SourceLink
+              href="https://defensescoop.com/2026/01/23/advana-transition-dod-financial-report-stephen-feinberg/"
+              title="Advana updates left out of annual Pentagon financial report (DefenseScoop, Jan 23, 2026)"
+              note="Source for the Advana omission finding underlying the interface-monitoring honest assessment."
+            />
+            <SourceLink
+              href="https://defensescoop.com/2026/05/05/pentagon-plans-to-use-ai-for-audits/"
+              title="Pentagon to lean on AI to achieve audit goals (DefenseScoop, May 5, 2026)"
+              note="The 'full universe of transactions' AI ingestion strategy referenced in the interface-monitoring assessment."
             />
           </div>
           <p className="text-xs text-muted-foreground mt-6 leading-relaxed max-w-3xl">

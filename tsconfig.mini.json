@@ -2,7 +2,9 @@
   "extends": "./tsconfig.json",
   "include": [
     "components/features/audit-usmc/data.ts",
-    "components/features/audit-usmc/charts.tsx",
-    "app/dashboard/audit/usmc/page.tsx"
+    "components/features/audit-usmc/diagram.tsx",
+    "app/dashboard/audit/usmc/page.tsx",
+    "components/features/audit-inside/data.ts",
+    "app/dashboard/audit/inside/page.tsx"
   ]
 }

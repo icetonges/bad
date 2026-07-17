@@ -19,14 +19,19 @@ import {
   NONCOMPLIANCE, ADVANA_CAPABILITIES, ACTIONABLE_90DAY, ACTIONABLE_6MONTH,
   ACTIONABLE_12MONTH, FY28_RISKS, AIML_PLAYS,
 } from '@/components/features/audit-inside/data'
+import {
+  RECENT_DEVELOPMENTS, ADVANA_OMISSION_FINDING, INTERFACE_MONITORING_GAP,
+} from '@/components/features/audit-usmc/data'
 
 const SECTIONS = [
   { id: 'overview',          label: 'Executive overview' },
+  { id: 'recent-developments', label: 'Recent developments (Jul 2026)' },
   { id: 'opinion',           label: 'The disclaimer explained' },
   { id: 'mw-architecture',   label: '26 MWs by theme' },
   { id: 'dollars',           label: 'Dollar-at-risk' },
   { id: 'fy28-roadmap',      label: 'Path to FY28' },
   { id: 'advana-role',       label: 'Advana as accelerator' },
+  { id: 'interface-gap',     label: 'Interface monitoring — honest take' },
   { id: 'trifurcation',      label: 'Advana → WDP restructure' },
   { id: 'evidence-flow',     label: 'Audit evidence flow' },
   { id: 'aiml',              label: 'AI/ML remediation plays' },
@@ -126,10 +131,41 @@ export default function AuditInsidePage() {
             <li><span className="text-gold font-medium mr-2">01</span> The <strong className="text-foreground">FY2028 clean-audit goal is the binding constraint</strong> on nearly every FM modernization decision through 2028. Every legacy-system retirement schedule, every APSR consolidation, every trading-partner reconciliation tool is now scored against this deadline.</li>
             <li><span className="text-gold font-medium mr-2">02</span> Advana's <strong className="text-foreground">original purpose was audit</strong> — the platform was launched as the Universe of Transactions (UoT) to solve "which data sources account for this balance-sheet line." The January 2026 trifurcation is an explicit return to that original mission for the FinMgmt track.</li>
             <li><span className="text-gold font-medium mr-2">03</span> Of the 26 material weaknesses, <strong className="text-foreground">24 are data/IT problems dressed up as accounting problems</strong>. The accounting standards are known. The gap is in traceability, lineage, and reconciliation at transaction level.</li>
-            <li><span className="text-gold font-medium mr-2">04</span> <strong className="text-foreground">USMC proved the pattern works.</strong> Using Advana's Seller Elimination Workbooks and Qlik obligation-interface analytics, the Marine Corps became the first military service to achieve a clean opinion. That playbook is directly portable to Army/Navy/AF.</li>
+            <li><span className="text-gold font-medium mr-2">04</span> <strong className="text-foreground">USMC proved the pattern works — three years running.</strong> Using Advana's Seller Elimination Workbooks and Qlik obligation-interface analytics, the Marine Corps became the first military service to achieve a clean opinion (FY2023) and has now sustained it through FY2025. That playbook is directly portable to Army/Navy/AF — see the <Link href="/dashboard/audit/usmc" className="text-gold underline underline-offset-2">USMC case study</Link> for the detailed breakdown of what mattered most.</li>
             <li><span className="text-gold font-medium mr-2">05</span> The FFMIA noncompliance tail is <strong className="text-foreground">25 years old</strong> (since FY2001) and some FMS systems aren't scheduled to retire until FY2031 — three years after the clean-audit target. This is the single largest structural risk to FY28.</li>
             <li><span className="text-gold font-medium mr-2">06</span> <strong className="text-foreground">Agentic AI is where the real leverage lives.</strong> Anomaly detection on the 5,665 unsupported adjustments, LLM-assisted CAP drafting, graph reconciliation for intragovernmental matches, natural-language retrieval of supporting documentation — these are the capabilities that compress the remediation timeline from decades to 24 months.</li>
           </ol>
+        </Section>
+
+        {/* 1.5 Recent developments */}
+        <Section id="recent-developments" title="Recent developments — checked against reporting through July 2026">
+          <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-3xl">
+            This analysis was originally built from DODIG-2026-032 and the Jan 12, 2026 Feinberg memo. Verified against current public reporting, here's what has actually moved since then — and one correction.
+          </p>
+
+          <Callout tone="coral" title="Correction: USMC's clean-opinion streak is three years, not two">
+            USMC's own Feb 2026 press release and independent coverage confirm FY2025 is the Marine Corps' <strong className="text-foreground">third</strong> consecutive unmodified opinion (FY2023, FY2024, FY2025) — not its second, as earlier drafts of this analysis assumed. See the companion <Link href="/dashboard/audit/usmc" className="text-gold underline underline-offset-2">USMC case study</Link> for the full correction and timeline.
+          </Callout>
+
+          <div className="space-y-3 mt-6">
+            {RECENT_DEVELOPMENTS.map((d, i) => (
+              <div key={i} className="rounded-md border border-border bg-card p-4">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="text-[10px] font-mono text-muted-foreground">{d.date}</span>
+                  <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                    d.significance === 'high' ? 'text-gold border-primary/60' : 'text-muted-foreground border-border'
+                  }`}>{d.significance} significance</span>
+                </div>
+                <div className="font-medium text-sm mb-1">{d.headline}</div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-1.5">{d.detail}</p>
+                <p className="text-[10px] text-muted-foreground/80">Source: {d.source}</p>
+              </div>
+            ))}
+          </div>
+
+          <Callout tone="gold" title="The headline movement: DoD is replacing 28 separate audits with one, modeled on USMC">
+            The March 24, 2026 announcement is the most consequential development since this page's original sources. Instead of 26-28 separate Component-level audits rolling up into an agency-wide opinion, DoD is moving toward a single, unified audit — explicitly built on "a similar hands-on audit strategy that proved successful for the Marine Corps." That validates this page's central thesis (USMC's pattern is the template), but it also raises the execution bar: a unified audit across Army, Navy, Air Force, and the 4th Estate is a materially harder integration problem than USMC solving its own, much smaller General Fund.
+          </Callout>
         </Section>
 
         {/* 2. The disclaimer explained */}
@@ -172,7 +208,7 @@ export default function AuditInsidePage() {
           </div>
 
           <Callout tone="gold" title="USMC is the counter-example that makes FY28 feasible">
-            The Marine Corps became the first Military Service to achieve a clean audit opinion. The remediation recipe — Advana Seller Elimination Workbooks, Qlik obligation-interface analytics, disciplined CAP execution — is documented, portable, and reproducible. The other services don't need to invent anything; they need to execute the USMC playbook at larger scale.
+            The Marine Corps became the first Military Service to achieve a clean audit opinion (FY2023) — and as of the FY2025 audit, has sustained it for three consecutive years while carrying the same seven material weaknesses forward, unresolved. The remediation recipe — Advana Seller Elimination Workbooks, Qlik obligation-interface analytics, disciplined CAP execution — is documented, portable, and reproducible. The other services don't need to invent anything; they need to execute the USMC playbook at larger scale.
           </Callout>
         </Section>
 
@@ -323,6 +359,44 @@ export default function AuditInsidePage() {
               </div>
             ))}
           </div>
+        </Section>
+
+        {/* 6.5 Interface monitoring gap — honest assessment */}
+        <Section id="interface-gap" title="Interface monitoring — an honest assessment of whether Advana actually does it">
+          <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-3xl">
+            Look back at the ten capabilities above. One of them — Qlik obligation-interface analytics — is credited with helping USMC resolve its Interface Controls material weakness (MW 6) and is one of the two mechanisms behind all three of USMC's consecutive clean opinions. The natural question: does Advana for Financial Management run an equivalent capability DoD-wide? Based on everything publicly disclosed, <strong className="text-foreground">we can't confirm that it does.</strong>
+          </p>
+
+          <Callout tone="coral" title={ADVANA_OMISSION_FINDING.headline}>
+            {ADVANA_OMISSION_FINDING.detail}
+          </Callout>
+
+          <div className="grid md:grid-cols-2 gap-4 mt-6">
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h3 className="font-medium text-sm mb-3">Why this looks like a real gap</h3>
+              <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                {INTERFACE_MONITORING_GAP.evidenceFor.map((e, i) => (
+                  <li key={i} className="flex gap-1.5"><span className="text-destructive mt-0.5">·</span><span>{e}</span></li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h3 className="font-medium text-sm mb-3">The case for the benefit of the doubt</h3>
+              <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                {INTERFACE_MONITORING_GAP.evidenceAgainst.map((e, i) => (
+                  <li key={i} className="flex gap-1.5"><span className="text-green-600 mt-0.5">·</span><span>{e}</span></li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <Callout tone="gold" title="Verdict">
+            {INTERFACE_MONITORING_GAP.verdict}
+          </Callout>
+
+          <p className="text-xs text-muted-foreground leading-relaxed mt-4 max-w-3xl">
+            The practical recommendation: before crediting the May 2026 "ingest everything" AI strategy as having solved this, DoD should be able to answer a narrow, checkable question — does any DoD-wide system currently ingest interface active/inactive status, error logs, and job-failure files from Army, Navy, and Air Force general ledger interfaces the way GCSS-MC's Error Handling Framework does for USMC? If the honest answer is no, that is a concrete, fundable, near-term gap — smaller and more tractable than most of the FY28 roadmap, and directly proven to work at the one Component that has actually gotten this right three years running.
+          </p>
         </Section>
 
         {/* 7. Trifurcation */}

@@ -19,7 +19,7 @@
 // ------------------------------------------------------------------
 export const USMC_TOPLINE = {
   opinion: 'Unmodified (Clean)',
-  consecutiveCleanYears: 2,               // FY2024 (first), FY2025 (sustained)
+  consecutiveCleanYears: 3,               // FY2023 (first), FY2024 (second), FY2025 (third) — confirmed by marines.mil, Feb 2026
   reportNumber: 'DODIG-2026-050',
   reportDate: 'February 6, 2026',
   auditor: 'Ernst & Young LLP',
@@ -40,17 +40,18 @@ export const USMC_TOPLINE = {
   cipWorkbookValueB: 3.0,                 // construction-in-progress tracked via Excel
   omsUniqueNsns: 7000,
   daiIncomingInterfaces: 27,
-  firstCleanOpinionFY: 2025,              // as reported by DoD-wide materials (calendar FY2024 audit, issued ~FY2025); this AFR (FY2025) is the sustaining year
+  firstCleanOpinionFY: 2023,              // corrected per marines.mil / Military Times / Washington Times (Feb 2026): FY2025 is USMC's THIRD consecutive unmodified opinion
 }
 
 // ------------------------------------------------------------------
 // TIMELINE — the compelling arc from disclaimer to sustained clean opinion
 // ------------------------------------------------------------------
 export const USMC_TIMELINE = [
-  { period: 'FY2017–FY2023', label: 'Disclaimers of opinion', detail: 'USMC General Fund, like every other Military Department, received consecutive disclaimers alongside the rest of DoD. Legacy manual processes, fragmented systems (DAI, GCSS-MC, MCTFS), no unified evidence trail.' },
-  { period: 'FY2024', label: 'First clean opinion — a Military Service "first"', detail: 'USMC becomes the first Military Service to achieve an unmodified opinion, using Advana Seller Elimination Workbooks and Qlik obligation-interface analytics to close the intragovernmental and interface-error gaps that had blocked prior years.' },
-  { period: 'FY2025', label: 'Second consecutive clean opinion — the harder proof', detail: 'EY again issues an unmodified opinion. Critically, all 7 material weaknesses from FY2024 carry forward unchanged: 0 new, 0 resolved. This is the year that proves the FY2024 result wasn\'t a one-off — sufficiency of audit evidence, not absence of control deficiencies, is what unlocked the opinion.' },
-  { period: 'FY2026 (in progress)', label: 'RMIC governance maturation', detail: 'Marine Corps Order 5200.24F revised; new governance structure stood up in FY2025 continues to mature. Oversight & Monitoring material weakness is the one EY estimates could downgrade by FY2028 — the longest-dated of the seven.' },
+  { period: 'FY2017–FY2022', label: 'Disclaimers of opinion', detail: 'USMC General Fund, like every other Military Department, received consecutive disclaimers alongside the rest of DoD. Legacy manual processes, fragmented systems (DAI, GCSS-MC, MCTFS), no unified evidence trail.' },
+  { period: 'FY2023', label: 'First clean opinion — a Military Service "first"', detail: 'USMC becomes the first Military Service to achieve an unmodified opinion, using Advana Seller Elimination Workbooks and Qlik obligation-interface analytics to close the intragovernmental and interface-error gaps that had blocked prior years.' },
+  { period: 'FY2024', label: 'Second consecutive clean opinion', detail: 'USMC sustains the opinion a second year, per its own FY2024 AFR, while carrying forward the same core material weaknesses. First real evidence the FY2023 result wasn\'t a fluke.' },
+  { period: 'FY2025', label: 'Third consecutive clean opinion — the harder proof', detail: 'EY again issues an unmodified opinion — confirmed by USMC\'s own Feb 2026 press release and independently reported by Military Times, Washington Times, and Seapower. All 7 material weaknesses carry forward unchanged: 0 new, 0 resolved. Commandant Gen. Eric M. Smith: "Discipline, accountability, and stewardship are not administrative tasks; they are part of our warfighting culture." This is the year that proves the pattern is durable — sufficiency of audit evidence, not absence of control deficiencies, is what unlocked three straight opinions.' },
+  { period: 'FY2026 (in progress)', label: 'DoD adopts the USMC approach as department-wide doctrine', detail: 'March 24, 2026: the Under Secretary of War (Comptroller) and the DoD IG jointly announced a "refined approach" to the FY2028 goal — replacing 28 separate Component-level audits with a single, unified DoD-wide audit, explicitly described as using "a similar hands-on audit strategy that proved successful for the Marine Corps." The USMC playbook is no longer just a case study; it is now stated DoD policy.' },
 ]
 
 // ------------------------------------------------------------------
@@ -427,3 +428,87 @@ export const LIKELIHOOD_ASSESSMENT = [
     rationale: 'Not addressed by Component-level replication at all. JSF Global Spares Pool integration into an accountable property system and correcting Building Partner Capacity accounting are named 90-day/12-month actionable items in the DoD-wide roadmap, but neither has USMC-style evidence of being on a proven remediation path yet.',
   },
 ]
+
+// ------------------------------------------------------------------
+// UPDATES SINCE PUBLICATION — verified via web search, current as of Jul 2026
+// This page originally drew on sources through Feb 2026; this section tracks
+// what has actually moved since then.
+// ------------------------------------------------------------------
+export const RECENT_DEVELOPMENTS = [
+  {
+    date: 'Feb 11, 2026',
+    headline: 'USMC confirmed: third consecutive clean opinion, not second',
+    detail: 'Marine Corps\' own press release, and independent coverage (Military Times, Washington Times, Seapower), confirm FY2025 is USMC\'s third straight unmodified opinion (FY2023, FY2024, FY2025) — corrected from this page\'s original framing. Commandant Gen. Eric M. Smith: "Discipline, accountability, and stewardship are not administrative tasks; they are part of our warfighting culture."',
+    source: 'marines.mil press release; Military Times, Feb 11, 2026',
+    significance: 'high',
+  },
+  {
+    date: 'Mar 24, 2026',
+    headline: 'DoD formally adopts a USMC-style single, unified audit approach',
+    detail: 'The Under Secretary of War (Comptroller) and the DoD Inspector General jointly announced a "refined approach" to the FY2028 goal: replacing 28 separate Component-level audits with one unified DoD-wide audit and consolidating financial reporting into fewer, department-wide statements — explicitly described as using "a similar hands-on audit strategy that proved successful for the Marine Corps."',
+    source: 'war.gov release, Mar 24, 2026; globalsecurity.org',
+    significance: 'high',
+  },
+  {
+    date: 'Apr–May 2026',
+    headline: 'Leadership change: former Army CFO named Deputy USW Comptroller',
+    detail: 'Michael Powers was named Deputy Under Secretary of War (Comptroller), adding senior financial-management leadership as the single-audit transition gets underway.',
+    source: 'executivegov.com',
+    significance: 'medium',
+  },
+  {
+    date: 'May 5, 2026',
+    headline: 'Pentagon commits to an AI-first audit strategy: ingest everything, test the full population',
+    detail: 'DoD officials outlined a plan to ingest data from every financial, HR, and logistics system into Advana to build a genuine "full universe of transactions," then use AI to test the full population rather than samples — turning intragovernmental and trading-partner analysis that took 4-6 months into an overnight run.',
+    source: 'DefenseScoop, May 5, 2026',
+    significance: 'high',
+  },
+  {
+    date: 'Jun 9, 2026',
+    headline: '$48.6M "Agentic Auditor" contract awarded to automate evidence collection',
+    detail: 'Army Contracting Command awarded Groundswell Corp. a firm-fixed-price delivery order (through June 2031) for Agentic Auditor, an AI platform built to autonomously gather supporting documentation across DoD organizations, reconcile records, flag anomalies, and assemble audit-ready packages.',
+    source: 'TheDefenseWatch.com; OrangeSlices AI, Jun 2026',
+    significance: 'medium',
+  },
+  {
+    date: 'Jul 9, 2026',
+    headline: 'Accenture wins $821M task order for War Data Platform integration',
+    detail: 'The most recent concrete contract action: Accenture Federal Services was selected for a potential five-year, $821M task order providing core integration support for the CDAO\'s War Data Platform — the successor infrastructure to Advana.',
+    source: 'DefenseScoop, Jul 9, 2026',
+    significance: 'medium',
+  },
+  {
+    date: 'May 2026',
+    headline: 'Congress escalates pressure — penalty legislation proposed',
+    detail: 'A House Oversight hearing produced bipartisan frustration over DoD\'s audit record. Rep. Kweisi Mfume (D-MD) said he could not support the proposed $1.5T FY2027 topline "if the accounting systems remain in disarray." Lawmakers introduced legislation to financially penalize DoD if it misses the December 31, 2028 statutory deadline.',
+    source: 'Federal News Network; CommonDef.com; Military Times, May 15, 2026',
+    significance: 'high',
+  },
+]
+
+// ------------------------------------------------------------------
+// HONEST ASSESSMENT — does Advana for Financial Management actually
+// monitor/ingest interface logs the way USMC's own GCSS-MC does?
+// This is an inference from absence of disclosed capability, not a
+// confirmed negative — flagged explicitly as such.
+// ------------------------------------------------------------------
+export const INTERFACE_MONITORING_GAP = {
+  claim: 'Based on everything publicly disclosed about Advana for Financial Management, there is no confirmed equivalent of USMC\'s Error Handling Framework or Automated Interface Report at the DoD-wide platform level.',
+  evidenceFor: [
+    'None of the 10 named Advana capabilities in this site\'s own DoD-wide analysis (Seller Elimination Workbooks, Qlik obligation-interface analytics, UoT Engine, automated FBWT reconciliation, accountable property integration, GenAI.mil discovery, journal-voucher anomaly detection, agentic reconciliation, contract spend attestation, management response drafting) describe ingesting interface error/exception logs, job-failure logs, or connection-status data the way USMC\'s GCSS-MC-level Error Handling Framework does.',
+    'The Qlik obligation-interface analytics capability that IS credited DoD-wide is explicitly the USMC-originated tool applied to USMC\'s own general ledger — there is no public evidence it has been extended to monitor interfaces at Army, Navy, or Air Force scale, or that a DoD-wide interface team (the organizational analog to USMC\'s Systems and Data Integration division) exists.',
+    'The Pentagon\'s own FY2025 Agency Financial Report omitted Advana entirely for the first time since the platform\'s inception (see Advana omission finding) — meaning even the department\'s flagship annual disclosure did not describe what Advana for Financial Management is actually doing operationally, interface monitoring included.',
+    'The May 2026 AI-first audit strategy talks about ingesting transactional data broadly ("every financial, HR, and logistics system") to build a full Universe of Transactions — a different thing from ingesting the interface error logs, job-scheduling logs, and connection-validity reports that USMC treats as a distinct, dedicated control. Bulk transaction ingestion does not, by itself, tell you whether an interface silently dropped or duplicated a file at 2am before period-end cutoff.',
+  ],
+  evidenceAgainst: [
+    'Absence of public disclosure is not proof of absence of capability — DoD may be building exactly this and simply not have publicized it, particularly given the FY2025 AFR\'s unusual silence on Advana generally.',
+    'The single-audit / hands-on-USMC-strategy announcement (Mar 2026) suggests DoD intends to replicate USMC\'s specific mechanisms, which would include interface monitoring — this may already be underway, just not yet reported.',
+  ],
+  verdict: 'The honest answer is: we cannot confirm from public sources that Advana for Financial Management ingests or monitors interface logs, error files, or connection status at all — and the one year DoD chose to say nothing about Advana in its flagship financial report is itself informative. Given that interface monitoring is the single most-proven, most-portable mechanism behind USMC\'s three consecutive clean opinions, its apparent absence at the DoD-wide platform level is the most concrete, checkable gap between "we adopted USMC\'s strategy" (the March 2026 announcement) and "we actually built USMC\'s tools" (unconfirmed).',
+}
+
+export const ADVANA_OMISSION_FINDING = {
+  headline: 'For the first time since Advana\'s inception, the FY2025 Agency Financial Report omitted Advana entirely',
+  detail: 'DefenseScoop reported (Jan 23, 2026) that the Pentagon\'s FY2025 AFR excludes any mention or performance-related information about Advana — a break from every prior year\'s report. This came the same week the Jan 12, 2026 Feinberg memo announced the platform\'s trifurcation, and it raises a direct question this page cannot answer from public sources: how is Advana for Financial Management actually performing on the ground, right now, if the department chose not to report on it in its own flagship annual financial document?',
+  source: 'DefenseScoop, "Advana updates left out of annual Pentagon financial report as major transition emerges," Jan 23, 2026',
+}

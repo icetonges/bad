@@ -57,7 +57,7 @@ export const DISCLAIMED_ENTITIES = [
 
 // USMC achieved clean — highlight this as the proof case
 export const CLEAN_OPINION_COMPONENTS = [
-  { entity: 'U.S. Marine Corps',  note: 'First Military Service to achieve clean opinion. Used Advana Seller Elimination Workbooks + Qlik interface remediation.' },
+  { entity: 'U.S. Marine Corps',  note: 'First Military Service to achieve a clean opinion (FY2023) — and as of the FY2025 audit, three consecutive unmodified opinions (FY2023-FY2025). Used Advana Seller Elimination Workbooks + Qlik interface remediation.' },
 ]
 
 // ------------------------------------------------------------------

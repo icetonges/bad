@@ -6,51 +6,59 @@
 export function USMCTimelineDiagram() {
   return (
     <div className="w-full overflow-x-auto">
-      <svg viewBox="0 0 940 240" className="w-full min-w-[820px] text-foreground" role="img" aria-label="USMC audit opinion timeline from disclaimer to sustained clean opinion">
+      <svg viewBox="0 0 1080 240" className="w-full min-w-[940px] text-foreground" role="img" aria-label="USMC audit opinion timeline from disclaimer to three consecutive clean opinions">
         <defs>
           <marker id="usmc-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1 L 8 5 L 2 9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </marker>
         </defs>
 
-        <line x1="60" y1="120" x2="880" y2="120" stroke="hsl(var(--muted-foreground))" strokeWidth="2" />
-        <line x1="880" y1="120" x2="880" y2="120" stroke="currentColor" strokeWidth="2" markerEnd="url(#usmc-arr)" />
+        <line x1="55" y1="120" x2="1020" y2="120" stroke="hsl(var(--muted-foreground))" strokeWidth="2" />
+        <line x1="1020" y1="120" x2="1020" y2="120" stroke="currentColor" strokeWidth="2" markerEnd="url(#usmc-arr)" />
 
-        {/* FY17-23 disclaimers */}
-        <circle cx="130" cy="120" r="14" fill="#C04B2D" stroke="hsl(var(--background))" strokeWidth="3" />
-        <text x="130" y="125" textAnchor="middle" fontSize="11" fontWeight="600" fill="white">✕</text>
-        <text x="130" y="80" textAnchor="middle" fontSize="13" fontWeight="500" fill="currentColor">FY2017–23</text>
-        <text x="130" y="96" textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">7 consecutive years</text>
-        <text x="130" y="160" textAnchor="middle" fontSize="12" fontWeight="500" fill="currentColor">Disclaimers</text>
-        <text x="130" y="176" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">Same as other Services</text>
+        {/* FY17-22 disclaimers */}
+        <circle cx="110" cy="120" r="13" fill="#C04B2D" stroke="hsl(var(--background))" strokeWidth="3" />
+        <text x="110" y="125" textAnchor="middle" fontSize="10" fontWeight="600" fill="white">✕</text>
+        <text x="110" y="80" textAnchor="middle" fontSize="12.5" fontWeight="500" fill="currentColor">FY2017–22</text>
+        <text x="110" y="96" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">6 consecutive years</text>
+        <text x="110" y="160" textAnchor="middle" fontSize="11.5" fontWeight="500" fill="currentColor">Disclaimers</text>
+        <text x="110" y="175" textAnchor="middle" fontSize="10" fill="hsl(var(--muted-foreground))">Same as other Services</text>
 
-        {/* FY24 first clean */}
-        <circle cx="360" cy="120" r="16" fill="none" stroke="#4C9C6F" strokeWidth="3" />
-        <text x="360" y="126" textAnchor="middle" fontSize="13" fontWeight="700" fill="#4C9C6F">✓</text>
-        <text x="360" y="76" textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">FY2024</text>
-        <text x="360" y="94" textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">First Military Service clean</text>
-        <text x="360" y="160" textAnchor="middle" fontSize="12" fontWeight="500" fill="currentColor">Unmodified opinion</text>
-        <text x="360" y="176" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">Seller Elim. Workbooks</text>
-        <text x="360" y="190" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">+ Qlik interface analytics</text>
+        {/* FY23 first clean */}
+        <circle cx="300" cy="120" r="15" fill="none" stroke="#4C9C6F" strokeWidth="3" />
+        <text x="300" y="126" textAnchor="middle" fontSize="12" fontWeight="700" fill="#4C9C6F">✓</text>
+        <text x="300" y="78" textAnchor="middle" fontSize="13" fontWeight="600" fill="currentColor">FY2023</text>
+        <text x="300" y="94" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">First Military Service clean</text>
+        <text x="300" y="160" textAnchor="middle" fontSize="11.5" fontWeight="500" fill="currentColor">Unmodified opinion</text>
+        <text x="300" y="175" textAnchor="middle" fontSize="10" fill="hsl(var(--muted-foreground))">Seller Elim. Workbooks</text>
+        <text x="300" y="188" textAnchor="middle" fontSize="10" fill="hsl(var(--muted-foreground))">+ Qlik interface analytics</text>
 
-        {/* FY25 sustained */}
-        <circle cx="600" cy="120" r="16" fill="#4C9C6F" stroke="hsl(var(--background))" strokeWidth="3" />
-        <text x="600" y="126" textAnchor="middle" fontSize="13" fontWeight="700" fill="white">✓</text>
-        <text x="600" y="76" textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">FY2025</text>
-        <text x="600" y="94" textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">Sustained — the harder proof</text>
-        <text x="600" y="160" textAnchor="middle" fontSize="12" fontWeight="500" fill="currentColor">2nd consecutive clean</text>
-        <text x="600" y="176" textAnchor="middle" fontSize="10.5" fontWeight="600" fill="#C04B2D">7 MWs: 0 new, 0 resolved</text>
-        <text x="600" y="190" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">DODIG-2026-050</text>
+        {/* FY24 second clean */}
+        <circle cx="500" cy="120" r="15" fill="#4C9C6F" fillOpacity="0.5" stroke="hsl(var(--background))" strokeWidth="3" />
+        <text x="500" y="126" textAnchor="middle" fontSize="12" fontWeight="700" fill="white">✓</text>
+        <text x="500" y="78" textAnchor="middle" fontSize="13" fontWeight="600" fill="currentColor">FY2024</text>
+        <text x="500" y="94" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">Second consecutive</text>
+        <text x="500" y="160" textAnchor="middle" fontSize="11.5" fontWeight="500" fill="currentColor">Sustained</text>
+        <text x="500" y="175" textAnchor="middle" fontSize="10" fill="hsl(var(--muted-foreground))">Not a one-off</text>
+
+        {/* FY25 third clean */}
+        <circle cx="700" cy="120" r="16" fill="#4C9C6F" stroke="hsl(var(--background))" strokeWidth="3" />
+        <text x="700" y="126" textAnchor="middle" fontSize="13" fontWeight="700" fill="white">✓</text>
+        <text x="700" y="76" textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">FY2025</text>
+        <text x="700" y="94" textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">Third straight — the proof</text>
+        <text x="700" y="160" textAnchor="middle" fontSize="12" fontWeight="500" fill="currentColor">3rd consecutive clean</text>
+        <text x="700" y="176" textAnchor="middle" fontSize="10.5" fontWeight="600" fill="#C04B2D">7 MWs: 0 new, 0 resolved</text>
+        <text x="700" y="190" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">DODIG-2026-050</text>
 
         {/* FY26+ */}
-        <circle cx="820" cy="120" r="14" fill="none" stroke="#D4AF37" strokeWidth="3" strokeDasharray="4,2" />
-        <text x="820" y="76" textAnchor="middle" fontSize="13" fontWeight="500" fill="currentColor">FY2026+</text>
-        <text x="820" y="94" textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">RMIC maturing</text>
-        <text x="820" y="160" textAnchor="middle" fontSize="12" fontWeight="500" fill="currentColor">1st MW downgrade est.</text>
-        <text x="820" y="176" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">Oversight & Monitoring → FY28</text>
+        <circle cx="950" cy="120" r="14" fill="none" stroke="#D4AF37" strokeWidth="3" strokeDasharray="4,2" />
+        <text x="950" y="76" textAnchor="middle" fontSize="13" fontWeight="500" fill="currentColor">FY2026+</text>
+        <text x="950" y="94" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">DoD-wide adoption</text>
+        <text x="950" y="160" textAnchor="middle" fontSize="11.5" fontWeight="500" fill="currentColor">Single unified audit</text>
+        <text x="950" y="175" textAnchor="middle" fontSize="10" fill="hsl(var(--muted-foreground))">Mar 2026 — modeled on USMC</text>
 
         {/* connecting label */}
-        <text x="470" y="215" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">Opinion achieved in year 1 · zero material weaknesses actually closed by year 2</text>
+        <text x="540" y="222" textAnchor="middle" fontSize="10.5" fill="hsl(var(--muted-foreground))">Opinion achieved in year 1 (FY23) · zero of the 7 material weaknesses actually closed through year 3 (FY25)</text>
       </svg>
     </div>
   )
