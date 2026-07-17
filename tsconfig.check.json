@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "components/features/audit-usmc/data.ts",
+    "components/features/audit-usmc/charts.tsx",
+    "components/features/audit-usmc/diagram.tsx",
+    "app/dashboard/audit/usmc/page.tsx",
+    "next-env.d.ts"
+  ]
+}

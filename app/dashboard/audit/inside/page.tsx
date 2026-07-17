@@ -491,6 +491,14 @@ export default function AuditInsidePage() {
           <Callout tone="gold" title="The scaling question">
             Army General Fund is roughly 10× USMC's financial footprint. Navy General Fund is similar. If the USMC pattern scales linearly, Army/Navy remediation takes 3-5× longer than USMC's path. If it doesn't scale linearly — because bigger organizations have more trading partners, more interfaces, more legacy systems — the tail could be longer. <strong className="text-foreground">The Advana FinMgmt track's primary job in FY26-27 is figuring out how to scale USMC's pattern without proportional resource growth.</strong>
           </Callout>
+
+          <Link href="/dashboard/audit/usmc" className="group mt-6 flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:border-primary/60 transition">
+            <div>
+              <p className="text-[10px] font-medium tracking-[0.15em] uppercase text-gold mb-1">USMC Case Study</p>
+              <p className="font-medium text-sm">Read the full USMC audit success analysis — the 7 material weaknesses, what worked, and what it means for FY28</p>
+            </div>
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-gold transition rotate-45 flex-shrink-0 ml-4" />
+          </Link>
         </Section>
 
         {/* 13. Risks */}

@@ -76,6 +76,32 @@ export default function AuditPage() {
             </CardContent>
           </Card>
         </Link>
+
+        <Link href="/dashboard/audit/usmc" className="group block mt-3">
+          <Card className="transition hover:border-primary/60">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-medium tracking-[0.15em] uppercase text-gold">USMC Case Study</span>
+                    <span className="text-[10px] text-muted-foreground">· DODIG-2026-050 / FY2025 AFR</span>
+                  </div>
+                  <h3 className="font-medium text-base mb-1.5">USMC's FY2025 audit success — what it actually proves, and what it doesn't</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+                    A second consecutive unmodified opinion, 7 material weaknesses carried forward with 0 resolved, and what that split means for DoD's FY2028 goal — the 7 weaknesses analyzed, what USMC did right, and recommendations for Army/Navy/Air Force.
+                  </p>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>11 sections</span><span>·</span><span>7 MWs analyzed</span><span>·</span><span>Scaling risk assessment</span>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition shrink-0 mt-1" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
       </section>
 
       {/* Pulse — live data */}

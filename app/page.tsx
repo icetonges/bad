@@ -88,6 +88,34 @@ export default function Landing() {
             </div>
           </Link>
 
+          {/* USMC Case Study */}
+          <Link href="/dashboard/audit/usmc" className="group rounded-lg border border-border bg-card p-6 hover:border-primary/60 transition block">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <p className="text-[10px] font-medium tracking-[0.15em] uppercase text-gold mb-1">
+                  Audit & Assurance · USMC Case Study
+                </p>
+                <h3 className="font-medium text-base leading-snug">
+                  USMC's FY2025 audit success — what it proves, and what it doesn't
+                </h3>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition shrink-0 mt-1" />
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              A second consecutive unmodified opinion with all 7 material weaknesses carried forward, 0 resolved — the case study on what "audit success" really means, and realistic, deep-dive recommendations for scaling it DoD-wide.
+            </p>
+            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border mb-3">
+              <Stat value="2" label="Consecutive clean opinions" />
+              <Stat value="7" label="MWs, 0 resolved" gold />
+              <Stat value="$52B" label="Assets audited" />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {['11 sections', 'Scaling risk', 'DoD recommendations', 'Likelihood assessment'].map((t) => (
+                <span key={t} className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>
+              ))}
+            </div>
+          </Link>
+
         </div>
       </section>
 
