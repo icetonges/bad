@@ -5,7 +5,7 @@ import {
   Legend, Cell, PieChart, Pie,
 } from 'recharts'
 import {
-  USMC_MATERIAL_WEAKNESSES, SCALE_COMPARISON, USMC_TOPLINE,
+  USMC_MATERIAL_WEAKNESSES, SCALE_COMPARISON, USMC_TOPLINE, MATERIALITY_BREAKDOWN,
 } from './data'
 
 const GOLD = '#D4AF37'
@@ -114,6 +114,40 @@ export function MWCarryForward() {
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------
+// MATERIALITY BREAKDOWN — where the $52B in total assets sits
+// ------------------------------------------------------------------
+export function AssetMaterialityBar() {
+  const colors = [GOLD, BLUE, GRAY]
+  return (
+    <div className="w-full">
+      <div className="flex h-10 rounded-md overflow-hidden border border-border">
+        {MATERIALITY_BREAKDOWN.map((m, i) => (
+          <div
+            key={i}
+            style={{ width: `${m.pct}%`, background: colors[i % colors.length] }}
+            className="flex items-center justify-center text-[11px] font-medium text-white"
+            title={`${m.label}: ${fmtB(m.valueB)} (${m.pct}%)`}
+          >
+            {m.pct >= 8 ? `${m.pct}%` : ''}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 space-y-1.5">
+        {MATERIALITY_BREAKDOWN.map((m, i) => (
+          <div key={i} className="flex items-start gap-2 text-[11px]">
+            <span className="h-2.5 w-2.5 rounded-sm mt-0.5 flex-shrink-0" style={{ background: colors[i % colors.length] }} />
+            <div>
+              <span className="text-foreground font-medium">{m.label}</span>
+              <span className="text-muted-foreground"> — {fmtB(m.valueB)} ({m.pct}%). {m.note}</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

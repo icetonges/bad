@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   Home, MessageSquare, FileText, Archive, BarChart2, Package,
   BarChart3, FolderOpen, FileStack,
-  ShieldCheck, ClipboardCheck,
+  ShieldCheck, ClipboardCheck, Award,
   Coins, Receipt,
   FileSignature, DollarSign,
 } from 'lucide-react'
@@ -39,6 +39,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard/audit',         icon: ShieldCheck,     label: 'Findings tracker' },
       { href: '/dashboard/audit/inside',  icon: FileStack,       label: 'Audit inside' },
+      { href: '/dashboard/audit/usmc',    icon: Award,           label: 'USMC case study' },
       { href: '/dashboard/audit/library', icon: FolderOpen,      label: 'Document library' },
     ],
   },

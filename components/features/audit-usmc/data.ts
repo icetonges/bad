@@ -188,47 +188,113 @@ export const USMC_NONCOMPLIANCE = [
 
 // ------------------------------------------------------------------
 // WHAT USMC DID RIGHT — the mitigation/compensating-control playbook
+// tier: 1 = governance/enabler, 2 = highest-leverage mechanical fix,
+//       3 = highest dollar materiality (least durable), 4 = baseline hygiene / soft factors
 // ------------------------------------------------------------------
 export const USMC_WINS = [
   {
     win: 'Stood up a dedicated RMIC governance structure in FY2025',
     detail: 'A named governance body — not an ad hoc committee — owns audit and Risk Management & Internal Control activities. Marine Corps Order 5200.24F was revised and signed by the Commandant, reinforcing top-level ownership.',
     portable: true,
-  },
-  {
-    win: 'Accepted labor-intensive manual compensating controls rather than waiting for system fixes',
-    detail: 'Excel-based tracking for $5.5B of Military Equipment and $3.0B of construction-in-progress is not sustainable long-term, but it produced auditable evidence now. USMC treated "good enough evidence today" as compatible with "keep building the real system fix."',
-    portable: true,
-  },
-  {
-    win: 'Built dedicated interface ownership: the DAI Interface Team + Error Handling Framework',
-    detail: 'Full visibility into all 27 incoming interfaces feeding the general ledger, a formal error guide, and real-time error capture/logging. This directly parallels the DoD-wide Qlik obligation-interface analytics used in the original FY2024 breakthrough.',
-    portable: true,
+    tier: 1,
   },
   {
     win: 'Stood up a Systems and Data Integration division specifically for transactional analysis',
-    detail: 'A standing unit (operational all of FY2025) whose sole mission is monitoring interfaces and building efficiencies in transactional processes — not a project team that disbands after the fix.',
+    detail: 'A standing unit (operational all of FY2025) whose sole mission is monitoring interfaces and building efficiencies in transactional processes — not a project team that disbands after the fix. This is the organizational home that made the interface fix (below) possible and durable.',
     portable: true,
+    tier: 1,
+  },
+  {
+    win: 'Built dedicated interface ownership: the DAI Interface Team + Error Handling Framework',
+    detail: 'Full visibility into all 27 incoming interfaces feeding the general ledger, a formal error guide, and real-time error capture/logging via the Error Handling Framework (EHF) plus an Automated Interface Report tracking active/inactive status. This directly parallels the DoD-wide Qlik obligation-interface analytics used in the original FY2024 breakthrough — the same mechanism shows up in both the first clean opinion and the sustained second one.',
+    portable: true,
+    tier: 2,
   },
   {
     win: 'Sequenced ICAM modernization on a funded, dated rollout (NIS/DON ICAM, DISA E-ICAM)',
     detail: 'Access control and SoD remediation is on rails — GCSS-MC onboarded in FY2025, DAI scheduled for FY2026 — rather than an open-ended "someday" IT modernization backlog item.',
     portable: true,
+    tier: 2,
+  },
+  {
+    win: 'Accepted labor-intensive manual compensating controls rather than waiting for system fixes',
+    detail: 'Excel-based tracking for $5.5B of Military Equipment and $3.0B of construction-in-progress is not sustainable long-term, but it produced auditable evidence now for the single largest asset category (GPP&E, 48.3% of total assets). USMC treated "good enough evidence today" as compatible with "keep building the real system fix" — but the auditor names this same workaround as inherent risk in the same report.',
+    portable: true,
+    tier: 3,
   },
   {
     win: 'Maintained a genuinely low-risk payment/compliance baseline',
     detail: 'Zero reportable Antideficiency Act violations in FY2025; 1.98% combined improper/unknown payment rate under PIIA. Clean opinion is easier to sustain when the "easy to get very wrong" categories are already under control.',
     portable: true,
+    tier: 4,
   },
   {
     win: 'Kept the EY relationship constructive and continuous, not adversarial',
     detail: 'The Fiscal Director\'s response letter explicitly credits the "positive and professional relationship" as "a key factor in the successful completion" of the audit — a soft factor that shows up in evidence-request cycle time and CAP quality.',
     portable: true,
+    tier: 4,
   },
   {
     win: 'Started automation pilots on the narrowest, most tractable slice first',
     detail: 'Rather than a department-wide AI transformation program, USMC piloted automation on one interface (contract writing system) to prove the triage/labor-hour-refocus pattern before scaling.',
     portable: true,
+    tier: 4,
+  },
+]
+
+// ------------------------------------------------------------------
+// MATERIALITY BREAKDOWN — where the $52B in total assets actually sits
+// (Figure 9, FY2025 USMC AFR)
+// ------------------------------------------------------------------
+export const MATERIALITY_BREAKDOWN = [
+  { label: 'General PP&E, Net', valueB: 25.1, pct: 48.3, note: '$8.5B of this ($5.5B military equipment + $3.0B construction-in-progress) is tracked via Excel workbooks, not a system of record.' },
+  { label: 'FBWT + Inventory & Related Property, Net', valueB: 26.8, pct: 51.5, note: 'Combined per AFR Figure 9. OM&S portion (~7,000 NSNs) valued via weighted-average-cost Excel calculation.' },
+  { label: 'Remaining assets (AR, advances/prepayments)', valueB: 0.1, pct: 0.2, note: 'Residual balance — immaterial by comparison.' },
+]
+
+// ------------------------------------------------------------------
+// THE INTERFACE CHOKEPOINT — why interface monitoring punches above
+// its weight relative to any single balance-sheet line
+// ------------------------------------------------------------------
+export const INTERFACE_CHOKEPOINT = {
+  incomingInterfaces: 27,
+  mwsConverging: [
+    'Budget Execution & Monitoring (MW 2) — unmatched transactions, dormant obligations flow through these interfaces',
+    'Financial Info Systems – Access Controls/SoD (MW 5) — governs who can touch the interfaces',
+    'Financial Info Systems – Configuration Management (MW 6) — governs changes to the interfaces',
+    'Financial Info Systems – IT Operations (MW 7) — is the interface error-handling itself',
+  ],
+  cutoffRiskDetail: 'DAI enforces a strict period-end cutoff. Interface files that arrive late are not systemically recorded — USMC must manually track and post them as temporary journal vouchers, which the auditor flags as directly increasing the risk of material misstatement at every close. Cutoff is one of five classic audit assertions (existence, completeness, valuation, rights, cutoff), and a broken interface is the one failure mode that can misstate timing across every transaction cycle simultaneously — not just one balance.',
+  statementAffected: 'Statement of Budgetary Resources — one of the three principal statements EY opined on, and the one most directly dependent on interface integrity rather than asset valuation.',
+}
+
+// ------------------------------------------------------------------
+// CRITICALITY HIERARCHY — ranking what mattered most, and why
+// ------------------------------------------------------------------
+export const CRITICALITY_HIERARCHY = [
+  {
+    tier: 1,
+    label: 'Governance — the enabler',
+    verdict: 'Necessary, not sufficient',
+    items: ['Commandant-signed RMIC order (MCO 5200.24F)', 'Standing Systems and Data Integration division'],
+    rationale: 'Nothing else on this list gets built or stays funded without a senior-leader decision to prioritize audit readiness and a standing organizational home to own it. The Systems and Data Integration division is precisely what gave the interface fix (tier 2) a permanent owner instead of a project team that disbands after one good year.',
+    caveat: 'Governance alone produces no audit evidence. It is the precondition for the other tiers, not a substitute for them — USMC could have a perfect RMIC program and still fail the audit if the interfaces or the balance-sheet evidence weren\'t there.',
+  },
+  {
+    tier: 2,
+    label: 'Interface monitoring — the highest-leverage mechanical fix',
+    verdict: 'Most critical of the tactical fixes',
+    items: ['DAI Interface Team (full visibility into 27 incoming interfaces)', 'Error Handling Framework + Automated Interface Report', 'ICAM sequencing for access to those same systems'],
+    rationale: 'Every dollar of the $40.5B appropriation base has to pass through one of 27 interfaces before it becomes an audited number — this is the chokepoint, not a single asset class. It is also the one fix credited in both the FY2024 breakthrough (Qlik interface analytics) and the FY2025 sustained opinion, and it converges with four of the seven material weaknesses. It directly addresses cutoff risk, the one failure mode that can misstate an entire transaction cycle rather than one balance.',
+    caveat: 'Interface integrity alone does not cover GPP&E/OM&S valuation risk (tier 3) — a perfectly reconciled interface can still carry a misvalued $25B GPP&E balance behind it.',
+  },
+  {
+    tier: 3,
+    label: 'GPP&E/OM&S compensating controls — highest dollar materiality',
+    verdict: 'Biggest number, least durable',
+    items: ['Excel-based Military Equipment tracking ($5.5B)', 'Excel-based construction-in-progress tracking ($3.0B)', 'Weighted-average-cost OM&S calculation'],
+    rationale: 'GPP&E alone is 48.3% of total assets — the single largest balance-sheet category, and the one whose evidence trail is the most directly manual. Without these workbooks, the largest line on the balance sheet has no audit trail at all.',
+    caveat: 'This is a stopgap the auditor itself names as inherent risk in the same report — labor-intensive, dependent on a few experienced people, and explicitly called out as something USMC is trying to engineer its way out of (the FY2025 PP&E/OM&S automation study), not settle into.',
   },
 ]
 

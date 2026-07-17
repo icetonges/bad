@@ -6,11 +6,12 @@ import {
   ArrowUpRight, AlertTriangle, ShieldAlert, Info, ExternalLink, Download,
   Sparkles, ShieldCheck,
 } from 'lucide-react'
-import { MWByNature, MWCarryForward, ScaleComparison } from '@/components/features/audit-usmc/charts'
+import { MWByNature, MWCarryForward, ScaleComparison, AssetMaterialityBar } from '@/components/features/audit-usmc/charts'
 import { USMCTimelineDiagram, EvidenceVsRemediationDiagram } from '@/components/features/audit-usmc/diagram'
 import {
   USMC_TOPLINE, USMC_TIMELINE, USMC_MATERIAL_WEAKNESSES, USMC_NONCOMPLIANCE,
   USMC_WINS, DOD_RECOMMENDATIONS, USMC_INFORMED_RISKS, LIKELIHOOD_ASSESSMENT,
+  INTERFACE_CHOKEPOINT, CRITICALITY_HIERARCHY,
 } from '@/components/features/audit-usmc/data'
 
 const SECTIONS = [
@@ -18,7 +19,7 @@ const SECTIONS = [
   { id: 'timeline',        label: 'The timeline' },
   { id: 'paradox',         label: 'The central paradox' },
   { id: 'seven-mws',       label: 'The 7 material weaknesses' },
-  { id: 'what-worked',     label: 'What USMC did right' },
+  { id: 'what-worked',     label: 'What mattered most — ranked' },
   { id: 'noncompliance',   label: 'Noncompliance, unresolved' },
   { id: 'scale-reality',   label: 'The scaling reality' },
   { id: 'recommendations', label: 'DoD-wide recommendations' },
@@ -223,11 +224,65 @@ export default function USMCAuditSuccessPage() {
           </div>
         </Section>
 
-        {/* 5. What worked */}
-        <Section id="what-worked" title="What USMC actually did right">
+        {/* 5. What worked — ranked by criticality */}
+        <Section id="what-worked" title="What mattered most — ranked, not just listed">
           <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-3xl">
-            None of these are exotic. That's the point — they're organizational discipline and staffing decisions that any Component could copy without waiting on a multi-year system replacement.
+            None of USMC's wins are exotic — that's part of the point. But they don't all matter equally. Reading them side by side against materiality and audit-assertion risk produces a clear hierarchy: one tier of wins <em>enabled</em> everything else, one tier is the highest-leverage <em>mechanical</em> fix, and one tier carries the biggest dollar number but is the least durable.
           </p>
+
+          <h3 className="text-base font-medium mb-3">Where the $52B in assets actually sits</h3>
+          <ChartFrame title="Total assets by category (Figure 9, FY2025 USMC AFR)">
+            <AssetMaterialityBar />
+          </ChartFrame>
+
+          <div className="grid md:grid-cols-2 gap-4 mt-6 mb-10">
+            <Callout tone="gold" title="The chokepoint argument, for interface monitoring">
+              All <strong className="text-foreground">{INTERFACE_CHOKEPOINT.incomingInterfaces} incoming interfaces</strong> feed the general ledger — every dollar of the $40.5B appropriation base has to pass through one of them before it becomes an audited number. GPP&E is a consumer of that pipeline; the interfaces <em>are</em> the pipeline. Four of the seven material weaknesses converge on interface integrity in some form:
+              <ul className="mt-2 space-y-1">
+                {INTERFACE_CHOKEPOINT.mwsConverging.map((m, i) => (
+                  <li key={i} className="flex gap-1.5"><span className="text-muted-foreground/60">·</span><span>{m}</span></li>
+                ))}
+              </ul>
+            </Callout>
+            <Callout tone="coral" title="The cutoff-risk argument, for interface monitoring">
+              {INTERFACE_CHOKEPOINT.cutoffRiskDetail} It directly affects the <strong className="text-foreground">{INTERFACE_CHOKEPOINT.statementAffected}</strong>
+            </Callout>
+          </div>
+
+          <h3 className="text-base font-medium mb-3">The criticality hierarchy</h3>
+          <div className="space-y-4 mb-10">
+            {CRITICALITY_HIERARCHY.map((c) => (
+              <div key={c.tier} className="rounded-lg border border-border bg-card p-5">
+                <div className="flex items-start gap-3 flex-wrap mb-3">
+                  <div className="flex-shrink-0 flex items-center justify-center h-9 w-9 rounded-md bg-primary/10 text-gold text-sm font-semibold">
+                    T{c.tier}
+                  </div>
+                  <div className="flex-1 min-w-[240px]">
+                    <div className="font-medium text-sm">{c.label}</div>
+                    <span className={`inline-flex mt-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                      c.tier === 2 ? 'text-gold border-primary/60' : 'text-muted-foreground border-border'
+                    }`}>{c.verdict}</span>
+                  </div>
+                </div>
+                <div className="mb-2">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">What's in this tier</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.items.map((it, j) => (
+                      <span key={j} className="text-[11px] bg-secondary text-foreground/80 px-2 py-0.5 rounded">{it}</span>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-2"><span className="font-medium text-foreground/80">Why it matters: </span>{c.rationale}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed"><span className="font-medium text-foreground/80">Why it's not enough alone: </span>{c.caveat}</p>
+              </div>
+            ))}
+          </div>
+
+          <Callout tone="gold" title="Verdict — is interface monitoring THE most critical thing USMC did?">
+            Of the tactical, mechanical fixes, yes — it's the highest-leverage single win. It's proven twice (the FY2024 breakthrough and the FY2025 sustained opinion both lean on it), it's the widest chokepoint in the system, it directly addresses cutoff risk across every transaction cycle, and it's the most portable to the rest of DoD. But it is not the single most important thing overall: governance made it possible in the first place, and it does nothing for the $25B GPP&E valuation problem, which is carried by a much less durable fix. <strong className="text-foreground">Rank order: governance enabled it, interface monitoring is the best engineered answer, GPP&E/OM&S compensating controls are the biggest number and the shakiest ground.</strong>
+          </Callout>
+
+          <h3 className="text-base font-medium mt-10 mb-3">All eight wins, tiered</h3>
           <div className="space-y-3">
             {USMC_WINS.map((w, i) => (
               <div key={i} className="rounded-md border border-border bg-card p-4 flex items-start gap-3">
@@ -236,9 +291,12 @@ export default function USMCAuditSuccessPage() {
                   <div className="font-medium text-sm mb-1">{w.win}</div>
                   <div className="text-xs text-muted-foreground leading-relaxed">{w.detail}</div>
                 </div>
-                {w.portable && (
-                  <span className="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border text-green-600 border-green-600/40 whitespace-nowrap">Portable</span>
-                )}
+                <span className={`flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border whitespace-nowrap ${
+                  w.tier === 1 ? 'text-[#5B4BC4] border-[#5B4BC4]/50' :
+                  w.tier === 2 ? 'text-gold border-primary/60' :
+                  w.tier === 3 ? 'text-destructive border-destructive/60' :
+                  'text-muted-foreground border-border'
+                }`}>Tier {w.tier}</span>
               </div>
             ))}
           </div>
